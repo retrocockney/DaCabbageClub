@@ -1,0 +1,2784 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>CabbageMuncher: FFA Multiplayer & Horror</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Three.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <!-- Socket.io client is served by the game server itself -->
+    <script src="/socket.io/socket.io.js"></script>
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Google Font -->
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;800;900&display=swap" rel="stylesheet">
+
+    <style>
+        body {
+            font-family: 'Outfit', sans-serif;
+            user-select: none;
+            -webkit-user-select: none;
+            overflow: hidden;
+            touch-action: manipulation;
+        }
+
+        /* Floating Munch Text Animations */
+        @keyframes pop-float {
+            0% { opacity: 1; transform: translateY(0) scale(0.8) rotate(-3deg); }
+            50% { opacity: 1; transform: translateY(-45px) scale(1.25) rotate(3deg); }
+            100% { opacity: 0; transform: translateY(-90px) scale(0.9) rotate(0deg); }
+        }
+
+        .pop-text {
+            animation: pop-float 0.75s cubic-bezier(0.18, 0.89, 0.32, 1.28) forwards;
+        }
+
+        /* Lightning Flash Overlay */
+        #lightning-flash {
+            transition: opacity 0.05s ease-out;
+        }
+
+        /* Crate Reveal Animation */
+        @keyframes crate-reveal {
+            0% { opacity: 0; transform: scale(0.5) rotate(-6deg); }
+            70% { opacity: 1; transform: scale(1.08) rotate(2deg); }
+            100% { opacity: 1; transform: scale(1) rotate(0deg); }
+        }
+        .crate-reveal {
+            animation: crate-reveal 0.5s ease-out;
+        }
+
+        ::-webkit-scrollbar {
+            width: 5px;
+        }
+        ::-webkit-scrollbar-track {
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 8px;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(34, 197, 94, 0.6);
+            border-radius: 8px;
+        }
+        .arena-modal-card { background: radial-gradient(circle at 15% 0%,rgba(244,63,94,.16),transparent 38%),linear-gradient(145deg,#101b2a,#080e18 72%); box-shadow:0 28px 90px rgba(0,0,0,.65); }
+        .arena-mode-card { text-align:left; border:1px solid rgba(148,163,184,.25); border-radius:20px; padding:16px; min-height:112px; transition:transform .16s,border-color .16s,background .16s; }
+        .arena-mode-card:hover { transform:translateY(-2px); border-color:rgba(255,255,255,.48); }
+        .arena-hud-panel { background:linear-gradient(145deg,rgba(8,15,25,.94),rgba(15,23,42,.78)); border:1px solid rgba(148,163,184,.24); box-shadow:0 12px 38px rgba(0,0,0,.32); backdrop-filter:blur(14px); }
+        .cabagling-chip { display:inline-flex;align-items:center;gap:5px;border:1px solid rgba(134,239,172,.22);background:rgba(15,45,34,.72);border-radius:999px;padding:4px 8px;font-size:10px;font-weight:900;color:#bbf7d0;white-space:nowrap; }
+        .loot-card { background:linear-gradient(145deg,rgba(30,41,59,.95),rgba(15,23,42,.95));border:1px solid rgba(148,163,184,.24);border-radius:16px;padding:14px; }
+    </style>
+</head>
+<body class="bg-slate-950 text-white w-screen h-screen relative select-none overflow-hidden">
+
+    <!-- INITIAL USERNAME SELECTION MODAL -->
+    <div id="username-modal" class="fixed inset-0 bg-slate-950/90 backdrop-blur-md z-50 flex items-center justify-center p-4 transition-opacity duration-300">
+        <div class="bg-slate-900 border-2 border-emerald-500/60 w-full max-w-md rounded-3xl p-6 sm:p-8 shadow-2xl flex flex-col items-center text-center gap-5">
+            
+            <div class="w-16 h-16 bg-emerald-500/10 border border-emerald-500/30 rounded-2xl flex items-center justify-center text-emerald-400 text-3xl shadow-inner">
+                <i class="fa-solid fa-leaf"></i>
+            </div>
+
+            <div>
+                <h1 class="text-2xl sm:text-3xl font-black text-white tracking-wide">WELCOME MUNCHER</h1>
+                <p class="text-xs sm:text-sm text-slate-400 mt-1">Enter your name to load or start your persistent cabbage eating record!</p>
+            </div>
+
+            <form id="username-form" class="w-full flex flex-col gap-4">
+                <div class="flex flex-col items-start gap-1 w-full text-left">
+                    <label for="username-input" class="text-xs font-bold text-slate-300 uppercase tracking-wider">Username</label>
+                    <input 
+                        type="text" 
+                        id="username-input" 
+                        maxlength="16" 
+                        placeholder="Enter your name..." 
+                        required 
+                        class="w-full bg-slate-800 border border-slate-700 focus:border-emerald-500 text-white font-bold rounded-xl px-4 py-3 outline-none transition text-base"
+                    />
+                </div>
+
+                <button 
+                    type="submit" 
+                    class="w-full bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black py-3.5 px-6 rounded-xl shadow-lg transition transform active:scale-95 flex items-center justify-center gap-2 text-base mt-2 cursor-pointer"
+                >
+                    <span>START EATING</span>
+                    <i class="fa-solid fa-arrow-right"></i>
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Lightning Flash Overlay -->
+    <div id="lightning-flash" class="absolute inset-0 bg-white opacity-0 pointer-events-none z-30"></div>
+
+    <!-- First-Person Crosshair -->
+    <div id="crosshair" class="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-20 pointer-events-none flex items-center justify-center opacity-80">
+        <div class="w-2.5 h-2.5 bg-white/90 rounded-full border border-slate-950 shadow-lg"></div>
+    </div>
+
+    <!-- 3D WebGL Canvas Container -->
+    <div id="canvas-container" class="absolute inset-0 w-full h-full z-0 cursor-pointer"></div>
+
+    <!-- Background Music Audio Element (Looped) -->
+    <audio id="bg-music" loop preload="auto">
+        <!-- Embedded user audio track data URI -->
+        <source src="data:audio/mp3;base64,//uQZAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWGluZwAAAA8AAAACAAAC8wCAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIA==" type="audio/mpeg">
+    </audio>
+
+    <!-- Main HUD Overlay -->
+    <div id="main-hud" class="absolute inset-0 z-10 pointer-events-none flex flex-col justify-between p-4 sm:p-6">
+        
+        <!-- Top Navigation / Stats & Environmental HUD Bar -->
+        <div class="flex justify-between items-start w-full gap-2 sm:gap-4">
+            
+            <!-- Main Score Board -->
+            <div class="bg-slate-900/85 backdrop-blur-md border border-emerald-500/40 p-3.5 sm:p-4 rounded-2xl shadow-2xl flex flex-col pointer-events-auto min-w-[150px] sm:min-w-[210px]">
+                <span class="text-[10px] sm:text-xs uppercase tracking-wider text-emerald-400 font-black">Cabbages Eaten</span>
+                <div id="score-display" class="text-3xl sm:text-5xl font-black text-white tracking-tight leading-none my-1">0</div>
+                <div class="flex items-center gap-2 text-[11px] sm:text-xs text-slate-300 font-semibold">
+                    <i class="fa-solid fa-bolt text-amber-400"></i>
+                    <span>CPM: <strong id="cpm-display" class="text-amber-300">0</strong> / min</span>
+                    <span class="ml-2 text-yellow-300 font-bold"><i class="fa-solid fa-coins mr-1"></i><strong id="wallet-display">0</strong></span>
+                </div>
+            </div>
+
+            <!-- Environmental Status Info (Time + Weather) -->
+            <div class="flex flex-col items-center gap-1.5 sm:gap-2 pointer-events-auto">
+                <!-- Clock Badge -->
+                <div class="bg-slate-900/85 backdrop-blur-md border border-amber-500/40 px-3.5 py-1.5 rounded-xl shadow-lg flex items-center gap-2 text-xs font-extrabold text-amber-300">
+                    <i id="clock-icon" class="fa-solid fa-sun text-amber-400 text-sm"></i>
+                    <span id="clock-display" class="tracking-wide">12:00 PM</span>
+                    <span id="phase-display" class="text-[10px] text-slate-400 uppercase font-bold">DAY</span>
+                </div>
+
+                <!-- Weather Badge -->
+                <div id="weather-badge" class="bg-slate-900/85 backdrop-blur-md border border-cyan-500/40 px-3.5 py-1.5 rounded-xl shadow-lg flex items-center gap-2 text-xs font-extrabold text-cyan-300">
+                    <i id="weather-icon" class="fa-solid fa-sun text-amber-400"></i>
+                    <span id="weather-display" class="uppercase tracking-wider">CLEAR</span>
+                </div>
+            </div>
+
+            <!-- Audio Controls -->
+            <div class="flex items-center gap-2 pointer-events-auto">
+                <button id="crate-btn" title="Muncher Shop" class="bg-slate-900/85 hover:bg-slate-800 text-white p-3 sm:px-4 sm:py-3 rounded-xl border border-amber-500/50 transition active:scale-95 flex items-center gap-2 shadow-lg cursor-pointer">
+                    <i class="fa-solid fa-box-open text-amber-400"></i>
+                    <span class="hidden sm:inline text-xs font-bold">SHOP</span>
+                    
+                </button>
+                <button id="sound-btn" title="Toggle Sound & Music" class="bg-slate-900/85 hover:bg-slate-800 text-white p-3 sm:px-4 sm:py-3 rounded-xl border border-slate-700 transition active:scale-95 flex items-center gap-2 shadow-lg cursor-pointer">
+                    <i id="sound-icon" class="fa-solid fa-volume-high text-emerald-400"></i>
+                    <span class="hidden sm:inline text-xs font-bold">AUDIO</span>
+                    
+                </button>
+            </div>
+        </div>
+
+        <!-- Center Mouse Look Prompt -->
+        <div id="pointer-prompt" class="text-center my-auto transition-opacity duration-300">
+            <div class="inline-block bg-slate-900/90 backdrop-blur-md border-2 border-emerald-500 px-6 py-4 rounded-2xl shadow-2xl animate-bounce pointer-events-auto cursor-pointer">
+                <div class="text-lg sm:text-xl font-extrabold text-white mb-1">
+                    <i class="fa-solid fa-mouse-pointer text-emerald-400 mr-2"></i>CLICK TO LOOK AROUND
+                </div>
+                <div class="text-xs font-bold text-slate-300 flex flex-col sm:flex-row gap-2 justify-center items-center mt-2">
+                    <span>Press or Hold <kbd class="bg-emerald-500 text-slate-950 px-2 py-0.5 rounded font-black">E</kbd> / Left-Click to Eat</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Floating Text Popups Container -->
+        <div id="pop-text-container" class="absolute inset-0 pointer-events-none overflow-hidden"></div>
+
+        <!-- Bottom Status Bar -->
+        <div class="flex justify-between items-end w-full">
+            <div class="bg-slate-900/85 backdrop-blur-md border border-slate-700/60 px-4 py-2 rounded-xl text-xs text-slate-300 pointer-events-auto flex items-center gap-2 shadow-lg">
+                <i class="fa-solid fa-user text-emerald-400"></i>
+                <span>Muncher: <strong id="player-name-display" class="text-white">Player</strong></span>
+                <button id="edit-name-btn" class="text-slate-400 hover:text-emerald-400 ml-1 transition cursor-pointer">
+                    <i class="fa-solid fa-pen-to-square"></i>
+                    
+                </button>
+            </div>
+            <div class="text-right text-[11px] text-slate-300 bg-slate-900/85 px-3 py-1.5 rounded-lg border border-slate-800 backdrop-blur-sm hidden sm:block">
+                Stand on Dirt • <span class="text-emerald-400 font-bold">E / Click</span> to Eat • <span class="text-amber-400 font-bold">P</span> for Menu
+            </div>
+        </div>
+    </div>
+
+    <!-- PAUSE MENU (P) -->
+    <div id="pause-menu" class="fixed inset-0 bg-slate-950/80 backdrop-blur-md hidden items-center justify-center p-4" style="z-index:50">
+        <div class="bg-slate-900 border border-emerald-500/50 w-full max-w-sm rounded-3xl p-6 shadow-2xl flex flex-col gap-3 max-h-[92vh] overflow-y-auto">
+            <h2 id="pause-title" class="text-2xl font-black text-white text-center tracking-wide mb-1">PAUSED</h2>
+            <p id="pause-mode-note" class="text-center text-xs text-slate-400 mb-1">Your game is paused.</p>
+            <button id="pause-controls-btn" class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-black py-3 rounded-xl border border-indigo-300/40 transition active:scale-95 cursor-pointer"><i class="fa-solid fa-keyboard mr-2"></i>REMAP CONTROLS</button>
+            <div id="controls-remap-panel" class="hidden rounded-2xl border border-indigo-400/40 bg-slate-950/80 p-3 gap-2">
+                <div class="flex items-center justify-between"><strong class="text-indigo-200 text-sm">KEY BINDINGS</strong><button id="controls-reset-btn" class="text-[10px] font-black text-amber-300">RESET DEFAULTS</button></div>
+                <p class="text-[10px] text-slate-400">Choose an action, then press the key you want to use.</p>
+                <div id="controls-remap-list" class="grid grid-cols-2 gap-2"></div>
+                <p id="controls-remap-status" class="text-xs text-emerald-300 min-h-4">Click a binding to change it.</p>
+            </div>
+            <button id="pause-resume-btn" class="w-full bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black py-3 rounded-xl transition active:scale-95 cursor-pointer">RESUME</button>
+            <button id="pause-ffa-open-btn" class="w-full bg-rose-600 hover:bg-rose-500 text-white font-black py-3 rounded-xl border border-rose-300/50 transition active:scale-95 cursor-pointer"><i class="fa-solid fa-gamepad mr-2"></i>GAME MODES</button>
+            <button id="pause-ffa-shop-btn" class="hidden w-full bg-amber-500 hover:bg-amber-400 text-slate-950 font-black py-3 rounded-xl transition active:scale-95 cursor-pointer"><i class="fa-solid fa-store mr-2"></i>FFA ARMOURY</button>
+            <button id="pause-ffa-exit-btn" class="hidden w-full bg-rose-950 hover:bg-rose-900 text-rose-100 font-black py-3 rounded-xl border border-rose-500/50 transition active:scale-95 cursor-pointer"><i class="fa-solid fa-door-open mr-2"></i>EXIT FFA</button>
+            <button id="pause-crates-btn" class="w-full bg-slate-800 hover:bg-slate-700 text-white font-black py-3 rounded-xl border border-slate-700 transition active:scale-95 cursor-pointer"><i class="fa-solid fa-box-open text-amber-400 mr-2"></i>MUNCHER SHOP</button>
+            <button id="pause-sound-btn" class="w-full bg-slate-800 hover:bg-slate-700 text-white font-black py-3 rounded-xl border border-slate-700 transition active:scale-95 cursor-pointer"><i class="fa-solid fa-volume-high text-emerald-400 mr-2"></i>TOGGLE AUDIO</button>
+            <button id="pause-name-btn" class="w-full bg-slate-800 hover:bg-slate-700 text-white font-black py-3 rounded-xl border border-slate-700 transition active:scale-95 cursor-pointer"><i class="fa-solid fa-pen-to-square text-emerald-400 mr-2"></i>CHANGE MUNCHER NAME</button>
+            <button id="pause-reset-btn" class="w-full bg-slate-800 hover:bg-red-900/60 text-white font-black py-3 rounded-xl border border-slate-700 transition active:scale-95 cursor-pointer"><i class="fa-solid fa-rotate-left text-red-400 mr-2"></i>RESET PROGRESS</button>
+        </div>
+    </div>
+
+    <!-- MUNCHER SHOP (crates, skins, market) -->
+    <div id="crate-modal" class="fixed inset-0 bg-slate-950/85 backdrop-blur-md hidden items-center justify-center p-3 sm:p-6" style="z-index:60">
+        <div class="bg-slate-900 border border-amber-500/50 w-full max-w-3xl rounded-3xl shadow-2xl flex flex-col max-h-[92vh]">
+            <div class="flex justify-between items-center px-6 pt-5 pb-3 border-b border-slate-800">
+                <div>
+                    <h2 class="text-2xl font-black text-white tracking-wide"><i class="fa-solid fa-store text-amber-400 mr-2"></i>MUNCHER SHOP</h2>
+                    <p class="text-xs text-slate-400">Balance: <strong id="crate-balance" class="text-amber-300">0</strong> cabbages</p>
+                </div>
+                <button id="crate-close-btn" class="text-slate-400 hover:text-white text-xl cursor-pointer"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+
+            <div class="flex gap-2 px-6 pt-4">
+                <button class="shop-tab" data-tab="crates">Crates</button>
+                <button class="shop-tab" data-tab="skins">Skins</button>
+                <button class="shop-tab" data-tab="market">Market</button>
+            </div>
+
+            <div class="overflow-y-auto px-6 py-4 flex-1">
+                <div id="panel-crates" class="shop-panel flex flex-col gap-4">
+                    <div class="flex flex-col items-center gap-3 bg-slate-800/60 rounded-2xl p-5 border border-slate-700">
+                        <div id="crate-result" class="min-h-[96px] w-full flex items-center justify-center text-center text-sm text-slate-400">Open a crate to find a skin</div>
+                        <div class="flex gap-2 w-full">
+                            <button id="open-standard-btn" class="flex-1 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black py-3 rounded-xl transition active:scale-95 cursor-pointer">OPEN CRATE <span class="text-xs font-bold">(1,000)</span></button>
+                            <button id="open-event-btn" class="hidden flex-1 bg-cyan-400 hover:bg-cyan-300 text-slate-950 font-black py-3 rounded-xl transition active:scale-95 cursor-pointer">EVENT CRATE</button>
+                        </div>
+                    </div>
+                    <div>
+                        <h3 class="text-xs font-black uppercase tracking-wider text-slate-400 mb-2">Drop Odds</h3>
+                        <div id="odds-list" class="grid grid-cols-2 gap-x-6 gap-y-1 text-xs font-bold"></div>
+                    </div>
+                </div>
+
+                <div id="panel-skins" class="shop-panel hidden">
+                    <div id="skins-grid" class="grid grid-cols-2 sm:grid-cols-3 gap-3"></div>
+                </div>
+
+                <div id="panel-market" class="shop-panel hidden">
+                    <div id="market-list" class="grid grid-cols-1 sm:grid-cols-2 gap-3"></div>
+                </div>
+            </div>
+
+            <div id="shop-message" class="px-6 pb-4 text-sm font-bold min-h-[20px]"></div>
+        </div>
+    </div>
+
+    <!-- ARENA / HORROR MODE SELECTOR -->
+    <div id="ffa-mode-modal" class="fixed inset-0 z-[75] hidden items-center justify-center bg-slate-950/90 backdrop-blur-xl p-4 overflow-y-auto">
+        <div class="arena-modal-card w-full max-w-3xl rounded-[28px] border border-rose-400/40 p-5 sm:p-7 my-auto text-center">
+            <div class="flex items-center justify-center gap-2 text-[10px] font-black tracking-[.28em] text-rose-300"><span class="h-1.5 w-1.5 rounded-full bg-rose-400 animate-pulse"></span> CABBAGEMUNCHER GAME MODES <span class="h-1.5 w-1.5 rounded-full bg-rose-400 animate-pulse"></span></div>
+            <h2 class="mt-2 text-3xl sm:text-5xl font-black tracking-tight">CHOOSE YOUR CHAOS</h2>
+            <p class="mt-2 text-sm text-slate-400">Two very serious ways to take cabbage-related nonsense too far.</p>
+            <div class="mt-6 grid grid-cols-1 md:grid-cols-2 gap-3 text-white">
+                <div class="arena-mode-card bg-gradient-to-br from-rose-950/80 to-slate-900">
+                    <div class="text-3xl">🥬🔫</div><div class="mt-2 text-lg font-black">FFA MULTIPLAYER</div>
+                    <p class="mt-1 text-xs leading-relaxed text-slate-400">The cabbage field arena. Choose bots or empty-server practice, buy weapons and bring your Cabaglings.</p>
+                    <div class="mt-3 rounded-xl border border-slate-700/80 bg-black/20 p-3">
+                        <div class="mb-2 text-[10px] font-black tracking-widest text-slate-400">OPPONENTS</div>
+                        <div class="grid grid-cols-2 gap-2">
+                            <button id="ffa-bots-on-btn" class="rounded-xl border border-emerald-300 bg-emerald-500 py-2.5 text-xs font-black text-slate-950">BOTS ON</button>
+                            <button id="ffa-bots-off-btn" class="rounded-xl border border-slate-600 bg-slate-800 py-2.5 text-xs font-black text-slate-300">NO BOTS</button>
+                        </div>
+                    </div>
+                    <button id="ffa-online-btn" class="mt-3 w-full rounded-xl bg-emerald-500 hover:bg-emerald-400 py-3 text-xs font-black text-slate-950 shadow-lg">ONLINE FFA · LIVE PLAYERS</button>
+                    <div class="mt-2 grid grid-cols-2 gap-2">
+                        <button id="ffa-online-code-btn" class="rounded-xl border border-emerald-400/60 bg-slate-800 py-2.5 text-[11px] font-black text-emerald-200">JOIN FRIEND CODE</button>
+                        <div class="flex items-center justify-center text-[10px] text-slate-500">Quick join is public</div>
+                    </div>
+                    <div id="ffa-online-status" class="mt-2 min-h-4 text-[10px] font-bold text-emerald-300"></div>
+                    <div class="mt-3 grid grid-cols-2 gap-2">
+                        <button id="ffa-start-btn" class="rounded-xl bg-rose-600 hover:bg-rose-500 py-3 text-xs font-black shadow-lg">FREE FOR ALL</button>
+                        <button id="ffa-duel-btn" class="rounded-xl bg-violet-600 hover:bg-violet-500 py-3 text-xs font-black shadow-lg">1v1 DUEL</button>
+                    </div>
+                </div>
+                <div class="arena-mode-card bg-gradient-to-br from-emerald-950/80 to-slate-900 border-emerald-500/30">
+                    <div class="text-3xl">🧟🥬</div><div class="mt-2 text-lg font-black">HORROR MODE</div>
+                    <p class="mt-1 text-xs leading-relaxed text-slate-400">Survive waves of ZombCabbages, search the field for loot, earn money and find rare skins.</p>
+                    <div class="mt-3 flex items-center justify-between rounded-xl border border-emerald-900 bg-black/20 px-3 py-2 text-[10px] font-bold text-emerald-200"><span>WAVE SURVIVAL</span><span>LOOT DROPS</span><span>SKIN REWARDS</span></div>
+                    <button id="horror-start-btn" class="mt-3 w-full rounded-xl bg-emerald-500 hover:bg-emerald-400 py-3.5 text-sm font-black text-slate-950 shadow-lg"><i class="fa-solid fa-skull mr-2"></i>ENTER THE NIGHT</button>
+                </div>
+            </div>
+            <div class="mt-4 flex flex-col sm:flex-row gap-2">
+                <button id="ffa-menu-shop-btn" class="flex-1 rounded-xl border border-amber-400/50 bg-amber-500/15 py-3 font-black text-amber-200 hover:bg-amber-500/25"><i class="fa-solid fa-store mr-2"></i>ARMOURY & CABAGLINGS</button>
+                <button id="ffa-cancel-btn" class="flex-1 rounded-xl border border-slate-700 bg-slate-800/80 py-3 text-sm font-bold text-slate-300 hover:text-white">BACK TO CABBAGE MUNCHING</button>
+            </div>
+            <p class="mt-3 text-[10px] text-slate-500">WASD move · Mouse aim · Click fire · SHIFT sprint (no stamina) · SPACE jump · R reload · E pick up · P pause. Online FFA uses live players. Offline FFA uses bots.</p>
+        </div>
+    </div>
+
+    <!-- FFA ARMOURY -->
+    <div id="ffa-shop-modal" class="fixed inset-0 z-[80] hidden items-center justify-center bg-slate-950/90 backdrop-blur-md p-3 sm:p-6">
+        <div class="w-full max-w-3xl max-h-[92vh] rounded-3xl border border-amber-400/60 bg-slate-900 shadow-2xl flex flex-col">
+            <div class="flex items-center justify-between border-b border-slate-800 px-5 py-4">
+                <div><h2 class="text-2xl font-black"><i class="fa-solid fa-store text-amber-400 mr-2"></i>THE CABBAGE ARMOURY</h2><p class="mt-1 text-[10px] font-bold tracking-widest text-emerald-300">WEAPONS • CABAGLINGS • GADGETS • SKINS</p><p class="text-xs text-slate-400">Your money: <strong id="ffa-shop-balance" class="text-amber-300">0</strong> cabbages</p></div>
+                <button id="ffa-shop-close" class="text-slate-400 hover:text-white text-2xl" aria-label="Close armoury"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 px-5 pt-4">
+                <button class="ffa-shop-tab rounded-xl bg-amber-500 py-2.5 text-xs sm:text-sm font-black text-slate-950" data-tab="weapons">WEAPONS</button>
+                <button class="ffa-shop-tab rounded-xl bg-slate-800 py-2.5 text-xs sm:text-sm font-black text-slate-300" data-tab="pets">CABAGLINGS</button>
+                <button class="ffa-shop-tab rounded-xl bg-slate-800 py-2.5 text-xs sm:text-sm font-black text-slate-300" data-tab="gadgets">GADGETS</button>
+                <button class="ffa-shop-tab rounded-xl bg-slate-800 py-2.5 text-xs sm:text-sm font-black text-slate-300" data-tab="skins">SKINS</button>
+            </div>
+            <div id="ffa-shop-content" class="overflow-y-auto p-5 grid grid-cols-1 sm:grid-cols-2 gap-3"></div>
+            <div id="ffa-shop-message" class="min-h-8 px-5 pb-3 text-sm font-bold text-emerald-300"></div>
+            <div class="border-t border-slate-800 p-4"><button id="ffa-shop-done" class="w-full rounded-xl bg-emerald-500 py-3 font-black text-slate-950 hover:bg-emerald-400">BACK TO THE FIELD</button></div>
+        </div>
+    </div>
+
+    <!-- FFA / HORROR HUD -->
+    <div id="ffa-hud" class="fixed inset-0 z-[25] hidden pointer-events-none">
+        <div class="arena-hud-panel absolute left-3 top-3 sm:left-5 sm:top-5 rounded-2xl px-4 py-3 min-w-[190px]">
+            <div class="flex items-center justify-between gap-3"><div id="ffa-mode-label" class="text-[10px] font-black uppercase tracking-[.18em] text-rose-300">FFA MULTIPLAYER</div><div id="ffa-wave" class="hidden rounded-full bg-emerald-400/15 px-2 py-1 text-[9px] font-black text-emerald-200">WAVE 1</div></div>
+            <div class="mt-2 flex gap-4 text-sm font-black"><span>☠ <b id="ffa-kills">0</b></span><span>💀 <b id="ffa-deaths">0</b></span><span>🏆 <b id="ffa-score">0</b></span></div>
+            <div class="mt-2 text-xs font-bold text-amber-200">💰 <b id="ffa-wallet">0</b> cabbages</div>
+        </div>
+        <div id="ffa-pet-card" class="arena-hud-panel absolute right-3 top-3 sm:right-5 sm:top-5 max-w-[200px] rounded-2xl p-3 text-right">
+            <div class="text-[9px] font-black tracking-[.2em] text-emerald-300">YOUR CABAGLINGS</div>
+            <div class="mt-1 flex items-center justify-end gap-2"><div><div id="ffa-pet-name" class="text-xs font-black text-white">NONE EQUIPPED</div><div id="ffa-pet-status" class="text-[9px] text-slate-400">Visit the armoury</div></div><div id="ffa-pet-avatar" class="flex h-10 w-10 items-center justify-center rounded-xl border border-emerald-400/40 bg-emerald-500/15 text-2xl">🥬</div></div>
+            <div id="cabagling-owned-strip" class="mt-2 flex max-w-[180px] flex-wrap justify-end gap-1"></div>
+        </div>
+        <div class="arena-hud-panel absolute bottom-4 left-1/2 -translate-x-1/2 w-[min(94vw,450px)] rounded-2xl p-3 text-center">
+            <div class="flex items-center justify-between text-xs font-black"><span id="ffa-weapon-name" class="text-emerald-300">CABBAGE POPPER</span><span id="ffa-ammo" class="text-lime-300">30 / 90</span><span id="ffa-health-text" class="text-rose-300">100 / 100 HP</span></div>
+            <div class="mt-2 h-2 overflow-hidden rounded-full bg-slate-700"><div id="ffa-health-bar" class="h-full w-full bg-emerald-400 transition-all"></div></div>
+            <div class="mt-2 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-[9px] font-black tracking-wide text-slate-400"><span id="ffa-pet-label">No Cabagling equipped</span><span>WASD MOVE</span><span>CLICK FIRE</span><span>R RELOAD</span><span>E PICK UP</span><span>P PAUSE / MENU</span></div>
+        </div>
+        <div id="ffa-toast" class="absolute left-1/2 top-24 -translate-x-1/2 rounded-xl border border-emerald-300/50 bg-slate-950/90 px-5 py-3 text-center font-black text-emerald-200 shadow-2xl opacity-0 transition-opacity"></div>
+        <div id="horror-loot-hint" class="absolute left-1/2 bottom-28 -translate-x-1/2 rounded-xl border border-amber-300/40 bg-slate-950/85 px-4 py-2 text-xs font-black text-amber-200 opacity-0 transition-opacity">LOOT COLLECTED</div>
+    </div>
+
+    <!-- MAIN GAME SCRIPT -->
+    <script>
+        // --- GAME CONFIG & PERSISTENT SAVED PROGRESS ---
+        const gameState = {
+            score: 0,
+            playerName: localStorage.getItem('cabbage_player_name') || '',
+            soundEnabled: true,
+            eatTimestamps: [],
+            cpm: 0,
+            gameStarted: false,
+            wallet: 0 // spendable cabbages for crates
+        };
+        let ffaActive = false;
+        let ffaMenuOpen = false;
+        let ffaShopOpen = false;
+
+        const bgMusic = document.getElementById('bg-music');
+        bgMusic.volume = 0.45;
+
+        // Load saved progress for the current user
+        function loadPlayerProgress(username) {
+            if (!username) return 0;
+            const savedKey = `cabbage_progress_${username.toLowerCase()}`;
+            const savedValue = localStorage.getItem(savedKey);
+            return savedValue ? parseInt(savedValue, 10) : 0;
+        }
+
+        function savePlayerProgress() {
+            if (!gameState.playerName) return;
+            const savedKey = `cabbage_progress_${gameState.playerName.toLowerCase()}`;
+            localStorage.setItem(savedKey, gameState.score.toString());
+        }
+
+        // Handle Initial Username Prompt
+        const usernameModal = document.getElementById('username-modal');
+        const usernameInput = document.getElementById('username-input');
+        const usernameForm = document.getElementById('username-form');
+
+        if (gameState.playerName) {
+            usernameInput.value = gameState.playerName;
+        }
+
+        usernameForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            const chosen = usernameInput.value.trim().substring(0, 16);
+            if (chosen) {
+                gameState.playerName = chosen;
+                localStorage.setItem('cabbage_player_name', chosen);
+                document.getElementById('player-name-display').innerText = chosen;
+                
+                // Load existing cabbage count progress for this user
+                gameState.score = loadPlayerProgress(chosen);
+                loadEconomy(chosen);
+                ffaLoad();
+                updateHUD();
+
+                // Hide modal and start
+                usernameModal.classList.add('opacity-0', 'pointer-events-none');
+                setTimeout(() => usernameModal.style.display = 'none', 300);
+                gameState.gameStarted = true;
+                
+                // Play background loop music
+                if (gameState.soundEnabled) {
+                    bgMusic.play().catch(() => {});
+                }
+
+                requestLock();
+            }
+        });
+
+        // --- SYNTHESIZED AUDIO ENGINE (Web Audio API) ---
+        class SoundEngine {
+            constructor() {
+                this.ctx = null;
+                this.rainGain = null;
+                this.rainSource = null;
+                this.windGain = null;
+                this.windSource = null;
+            }
+
+            init() {
+                if (!this.ctx) {
+                    const AudioContext = window.AudioContext || window.webkitAudioContext;
+                    this.ctx = new AudioContext();
+                    this.setupAmbience();
+                }
+                if (this.ctx.state === 'suspended') {
+                    this.ctx.resume();
+                }
+            }
+
+            setupAmbience() {
+                if (!this.ctx) return;
+                const bufferSize = this.ctx.sampleRate * 2;
+                const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+                const data = buffer.getChannelData(0);
+                for (let i = 0; i < bufferSize; i++) {
+                    data[i] = Math.random() * 2 - 1;
+                }
+
+                // Rain Sound Generator
+                this.rainSource = this.ctx.createBufferSource();
+                this.rainSource.buffer = buffer;
+                this.rainSource.loop = true;
+                const rainFilter = this.ctx.createBiquadFilter();
+                rainFilter.type = 'lowpass';
+                rainFilter.frequency.setValueAtTime(1100, this.ctx.currentTime);
+                this.rainGain = this.ctx.createGain();
+                this.rainGain.gain.setValueAtTime(0, this.ctx.currentTime);
+                this.rainSource.connect(rainFilter);
+                rainFilter.connect(this.rainGain);
+                this.rainGain.connect(this.ctx.destination);
+                this.rainSource.start();
+
+                // Wind Sound Generator
+                this.windSource = this.ctx.createBufferSource();
+                this.windSource.buffer = buffer;
+                this.windSource.loop = true;
+                const windFilter = this.ctx.createBiquadFilter();
+                windFilter.type = 'bandpass';
+                windFilter.frequency.setValueAtTime(450, this.ctx.currentTime);
+                windFilter.Q.setValueAtTime(3.5, this.ctx.currentTime);
+                this.windGain = this.ctx.createGain();
+                this.windGain.gain.setValueAtTime(0, this.ctx.currentTime);
+                this.windSource.connect(windFilter);
+                windFilter.connect(this.windGain);
+                this.windGain.connect(this.ctx.destination);
+                this.windSource.start();
+            }
+
+            playCrunch() {
+                if (!gameState.soundEnabled) return;
+                this.init();
+
+                const now = this.ctx.currentTime;
+                
+                // Crisp Bite Crunch (Noise)
+                const bufferSize = this.ctx.sampleRate * 0.08;
+                const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+                const data = buffer.getChannelData(0);
+                for (let i = 0; i < bufferSize; i++) {
+                    data[i] = Math.random() * 2 - 1;
+                }
+
+                const noise = this.ctx.createBufferSource();
+                noise.buffer = buffer;
+
+                const filter = this.ctx.createBiquadFilter();
+                filter.type = 'bandpass';
+                filter.frequency.setValueAtTime(1500 + Math.random() * 900, now);
+                filter.Q.setValueAtTime(2.2, now);
+
+                const gain = this.ctx.createGain();
+                gain.gain.setValueAtTime(0.95, now);
+                gain.gain.exponentialRampToValueAtTime(0.01, now + 0.075);
+
+                noise.connect(filter);
+                filter.connect(gain);
+                gain.connect(this.ctx.destination);
+                noise.start(now);
+
+                // Low Pitch Resonance
+                const osc = this.ctx.createOscillator();
+                const oscGain = this.ctx.createGain();
+                osc.type = 'triangle';
+                osc.frequency.setValueAtTime(170 + Math.random() * 50, now);
+                osc.frequency.exponentialRampToValueAtTime(35, now + 0.07);
+
+                oscGain.gain.setValueAtTime(0.65, now);
+                oscGain.gain.exponentialRampToValueAtTime(0.01, now + 0.07);
+
+                osc.connect(oscGain);
+                oscGain.connect(this.ctx.destination);
+
+                osc.start(now);
+                osc.stop(now + 0.08);
+            }
+
+            playThunder() {
+                if (!gameState.soundEnabled) return;
+                this.init();
+                const now = this.ctx.currentTime;
+                
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(65, now);
+                osc.frequency.exponentialRampToValueAtTime(18, now + 1.3);
+
+                gain.gain.setValueAtTime(0.85, now);
+                gain.gain.exponentialRampToValueAtTime(0.01, now + 1.3);
+
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.start(now);
+                osc.stop(now + 1.35);
+            }
+
+            updateAmbience(weatherType) {
+                if (!this.ctx || !this.rainGain || !this.windGain) return;
+                const now = this.ctx.currentTime;
+                const targetRain = (!gameState.soundEnabled) ? 0 : (weatherType === 'RAIN' ? 0.16 : (weatherType === 'THUNDERSTORM' ? 0.38 : 0));
+                const targetWind = (!gameState.soundEnabled) ? 0 : (weatherType === 'SNOW' ? 0.22 : (weatherType === 'THUNDERSTORM' ? 0.28 : 0));
+
+                this.rainGain.gain.setTargetAtTime(targetRain, now, 0.5);
+                this.windGain.gain.setTargetAtTime(targetWind, now, 0.5);
+            }
+        }
+
+        const sounds = new SoundEngine();
+
+        // --- THREE.JS SCENE & CAMERA SETUP ---
+        const container = document.getElementById('canvas-container');
+        const scene = new THREE.Scene();
+        scene.fog = new THREE.FogExp2(0xa0e0ff, 0.012);
+
+        const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.05, 1000);
+        
+        // Player stands right on top of the 1x1x1 dirt block
+        const PLAYER_HEIGHT = 1.5;
+        camera.position.set(0, PLAYER_HEIGHT, 0);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        renderer.toneMappingExposure = 1.0;
+        container.appendChild(renderer.domElement);
+
+        // --- POINTER LOCK CONTROLS ---
+        let yaw = 0;
+        let pitch = 0;
+        let isPointerLocked = false;
+        const promptEl = document.getElementById('pointer-prompt');
+
+        function requestLock() {
+            if (!gameState.gameStarted) return;
+            container.requestPointerLock();
+            sounds.init();
+        }
+
+        container.addEventListener('click', () => {
+            if (!isPointerLocked && gameState.gameStarted) requestLock();
+        });
+        promptEl.addEventListener('click', requestLock);
+
+        document.addEventListener('pointerlockchange', () => {
+            if (document.pointerLockElement === container) {
+                isPointerLocked = true;
+                promptEl.style.opacity = '0';
+                promptEl.style.pointerEvents = 'none';
+            } else {
+                isPointerLocked = false;
+                if (typeof ffaKeys !== 'undefined') Object.keys(ffaKeys).forEach(k => ffaKeys[k] = false);
+                if (typeof ffaMoveVelocity !== 'undefined') ffaMoveVelocity.set(0, 0, 0);
+                if (typeof ffaJumpQueued !== 'undefined') ffaJumpQueued = false;
+                if (gameState.gameStarted && !crateModalOpen && !pauseOpen && !ffaMenuOpen && !ffaShopOpen) setPaused(true);
+                if (gameState.gameStarted) {
+                    promptEl.style.opacity = '1';
+                    promptEl.style.pointerEvents = 'auto';
+                }
+            }
+        });
+
+        document.addEventListener('mousemove', (e) => {
+            if (!isPointerLocked) return;
+
+            const sensitivity = 0.0022;
+            yaw -= e.movementX * sensitivity;
+            pitch -= e.movementY * sensitivity;
+
+            const maxPitch = Math.PI / 2.15;
+            pitch = Math.max(-maxPitch, Math.min(maxPitch, pitch));
+
+            camera.rotation.order = 'YXZ';
+            camera.rotation.y = yaw;
+            camera.rotation.x = pitch;
+        });
+
+        // --- LIGHTING & SUN/MOON ORBIT ---
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.45);
+        scene.add(ambientLight);
+
+        const sunLight = new THREE.DirectionalLight(0xfffaed, 1.3);
+        sunLight.castShadow = true;
+        sunLight.shadow.mapSize.width = 2048;
+        sunLight.shadow.mapSize.height = 2048;
+        sunLight.shadow.camera.near = 0.5;
+        sunLight.shadow.camera.far = 150;
+        const d = 70;
+        sunLight.shadow.camera.left = -d;
+        sunLight.shadow.camera.right = d;
+        sunLight.shadow.camera.top = d;
+        sunLight.shadow.camera.bottom = -d;
+        scene.add(sunLight);
+
+        // Sun & Moon Orbs
+        const sunGeo = new THREE.SphereGeometry(2.2, 16, 16);
+        const sunMat = new THREE.MeshBasicMaterial({ color: 0xffdd66 });
+        const sunMesh = new THREE.Mesh(sunGeo, sunMat);
+        scene.add(sunMesh);
+
+        const moonGeo = new THREE.SphereGeometry(1.6, 16, 16);
+        const moonMat = new THREE.MeshBasicMaterial({ color: 0xe0e6ed });
+        const moonMesh = new THREE.Mesh(moonGeo, moonMat);
+        scene.add(moonMesh);
+
+        // --- SINGLE ISOLATED DIRT BLOCK ---
+        function createDirtTexture() {
+            const canvas = document.createElement('canvas');
+            canvas.width = 64;
+            canvas.height = 64;
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = '#5c4028';
+            ctx.fillRect(0, 0, 64, 64);
+            for (let i = 0; i < 200; i++) {
+                ctx.fillStyle = Math.random() > 0.5 ? '#432c19' : '#735235';
+                ctx.fillRect(Math.floor(Math.random() * 64), Math.floor(Math.random() * 64), 3, 3);
+            }
+            return new THREE.CanvasTexture(canvas);
+        }
+
+        function createGrassTexture() {
+            const canvas = document.createElement('canvas');
+            canvas.width = 64;
+            canvas.height = 64;
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = '#388e3c';
+            ctx.fillRect(0, 0, 64, 64);
+            for (let i = 0; i < 300; i++) {
+                ctx.fillStyle = Math.random() > 0.5 ? '#2e7d32' : '#4caf50';
+                ctx.fillRect(Math.floor(Math.random() * 64), Math.floor(Math.random() * 64), 2, 4);
+            }
+            return new THREE.CanvasTexture(canvas);
+        }
+
+        const dirtTex = createDirtTexture();
+        dirtTex.magFilter = THREE.NearestFilter;
+        dirtTex.minFilter = THREE.NearestFilter;
+
+        const grassTex = createGrassTexture();
+        grassTex.magFilter = THREE.NearestFilter;
+        grassTex.minFilter = THREE.NearestFilter;
+
+        const dirtSideMat = new THREE.MeshStandardMaterial({ map: dirtTex, roughness: 0.9 });
+        const grassTopMat = new THREE.MeshStandardMaterial({ map: grassTex, roughness: 0.7 });
+
+        const blockMaterials = [
+            dirtSideMat,
+            dirtSideMat,
+            grassTopMat,
+            dirtSideMat,
+            dirtSideMat,
+            dirtSideMat
+        ];
+
+        const blockGeo = new THREE.BoxGeometry(1.0, 1.0, 1.0);
+        const singleDirtBlock = new THREE.Mesh(blockGeo, blockMaterials);
+        singleDirtBlock.position.set(0, 0, 0);
+        singleDirtBlock.receiveShadow = true;
+        singleDirtBlock.castShadow = true;
+        scene.add(singleDirtBlock);
+
+        // --- PROCEDURAL CABBAGE MODEL ---
+        const cabbageContainer = new THREE.Group();
+
+        let cabbageCoreMat = null;
+
+        function createCabbage() {
+            const group = new THREE.Group();
+            const coreGeo = new THREE.SphereGeometry(0.28, 16, 16);
+            const coreMat = new THREE.MeshStandardMaterial({ color: 0x81c784, roughness: 0.5 });
+            cabbageCoreMat = coreMat;
+            const core = new THREE.Mesh(coreGeo, coreMat);
+            group.add(core);
+
+            const leafGeo = new THREE.SphereGeometry(0.2, 12, 12, 0, Math.PI * 2, 0, Math.PI * 0.5);
+            const leafMat = new THREE.MeshStandardMaterial({ color: 0x2e7d32, roughness: 0.4, side: THREE.DoubleSide });
+
+            for (let i = 0; i < 14; i++) {
+                const leaf = new THREE.Mesh(leafGeo, leafMat);
+                leaf.scale.set(1.3, 1.0, 1.4);
+                const phi = Math.acos(-1 + (2 * i) / 14);
+                const theta = Math.sqrt(14 * Math.PI) * phi;
+
+                leaf.rotation.x = phi * 0.5;
+                leaf.rotation.y = theta;
+                leaf.position.set(Math.sin(phi) * Math.cos(theta) * 0.12, Math.cos(phi) * 0.08, Math.sin(phi) * Math.sin(theta) * 0.12);
+                group.add(leaf);
+            }
+            return group;
+        }
+
+        let cabbageMesh = createCabbage();
+        cabbageContainer.add(cabbageMesh);
+        cabbageContainer.position.set(0.24, -0.28, -0.5);
+        cabbageContainer.rotation.set(0.2, -0.3, 0.1);
+        camera.add(cabbageContainer);
+        scene.add(camera);
+
+        // --- PARTICLES: CRUMBS, WEATHER ---
+        const crumbsCount = 35;
+        const crumbsGeo = new THREE.DodecahedronGeometry(0.016, 0);
+        const crumbsMat = new THREE.MeshStandardMaterial({ color: 0x66bb6a });
+        const crumbsInstanced = new THREE.InstancedMesh(crumbsGeo, crumbsMat, crumbsCount);
+        const dummy = new THREE.Object3D();
+        const crumbParticles = Array.from({ length: crumbsCount }, () => ({ x: 0, y: -20, z: 0, vx: 0, vy: 0, vz: 0, life: 0 }));
+        scene.add(crumbsInstanced);
+
+        function triggerCrumbs() {
+            const spawnPos = new THREE.Vector3();
+            cabbageContainer.getWorldPosition(spawnPos);
+
+            crumbParticles.forEach(p => {
+                p.x = spawnPos.x + (Math.random() - 0.5) * 0.15;
+                p.y = spawnPos.y + (Math.random() - 0.5) * 0.15;
+                p.z = spawnPos.z + (Math.random() - 0.5) * 0.15;
+                p.vx = (Math.random() - 0.5) * 2.2;
+                p.vy = Math.random() * 1.8 + 0.3;
+                p.vz = (Math.random() - 0.5) * 2.2 - 0.4;
+                p.life = 1.0;
+            });
+        }
+
+        function updateCrumbs(delta) {
+            let active = false;
+            crumbParticles.forEach((p, i) => {
+                if (p.life > 0) {
+                    active = true;
+                    p.life -= delta * 2.5;
+                    p.x += p.vx * delta;
+                    p.y += p.vy * delta;
+                    p.z += p.vz * delta;
+                    p.vy -= 9.8 * delta;
+
+                    dummy.position.set(p.x, p.y, p.z);
+                    const s = Math.max(0, p.life);
+                    dummy.scale.set(s, s, s);
+                    dummy.updateMatrix();
+                    crumbsInstanced.setMatrixAt(i, dummy.matrix);
+                } else if (p.y > -10) {
+                    p.y = -20;
+                    dummy.position.set(0, -20, 0);
+                    dummy.updateMatrix();
+                    crumbsInstanced.setMatrixAt(i, dummy.matrix);
+                    active = true;
+                }
+            });
+            if (active) crumbsInstanced.instanceMatrix.needsUpdate = true;
+        }
+
+        const weatherParticleCount = 700;
+        const weatherGeo = new THREE.BufferGeometry();
+        const weatherPositions = new Float32Array(weatherParticleCount * 3);
+
+        for (let i = 0; i < weatherParticleCount; i++) {
+            weatherPositions[i * 3] = (Math.random() - 0.5) * 45;
+            weatherPositions[i * 3 + 1] = Math.random() * 30 - 5;
+            weatherPositions[i * 3 + 2] = (Math.random() - 0.5) * 45;
+        }
+        weatherGeo.setAttribute('position', new THREE.BufferAttribute(weatherPositions, 3));
+        const weatherMat = new THREE.PointsMaterial({ color: 0xffffff, size: 0.1, transparent: true, opacity: 0.65 });
+        const weatherPoints = new THREE.Points(weatherGeo, weatherMat);
+        scene.add(weatherPoints);
+
+        // --- DAY/NIGHT & WEATHER CYCLES ---
+        const DAY_NIGHT_DURATION = 120; // 2 Minutes
+        const WEATHER_DURATION = 60;   // 1 Minute
+
+        const WEATHER_TYPES = [
+            { name: 'CLEAR', icon: 'fa-sun', color: 'text-amber-400', border: 'border-cyan-500/40' },
+            { name: 'RAIN', icon: 'fa-cloud-rain', color: 'text-blue-400', border: 'border-blue-500/40' },
+            { name: 'FOG', icon: 'fa-smog', color: 'text-slate-300', border: 'border-slate-500/40' },
+            { name: 'THUNDERSTORM', icon: 'fa-bolt-lightning', color: 'text-purple-400', border: 'border-purple-500/40' },
+            { name: 'SNOW', icon: 'fa-snowflake', color: 'text-cyan-200', border: 'border-cyan-300/40' }
+        ];
+
+        let currentWeatherIndex = 0;
+        let weatherTimer = 0;
+        let dayNightTimer = 0;
+
+        function updateCycles(delta, time) {
+            dayNightTimer = (dayNightTimer + delta) % DAY_NIGHT_DURATION;
+            const dayProgress = dayNightTimer / DAY_NIGHT_DURATION;
+            const sunAngle = dayProgress * Math.PI * 2;
+
+            const radius = 55;
+            sunLight.position.x = Math.cos(sunAngle) * radius;
+            sunLight.position.y = Math.sin(sunAngle) * radius;
+            sunLight.position.z = 12;
+
+            sunMesh.position.copy(sunLight.position);
+            moonMesh.position.set(-sunLight.position.x, -sunLight.position.y, -sunLight.position.z);
+
+            const isDay = sunLight.position.y > 0;
+            const sunHeight = Math.max(-1, Math.min(1, sunLight.position.y / radius));
+            
+            let skyColor, fogColor, lightColor, lightIntensity;
+
+            if (sunHeight > 0.2) {
+                skyColor = new THREE.Color(0x7ec0ee);
+                fogColor = new THREE.Color(0xa0e0ff);
+                lightColor = new THREE.Color(0xfffaed);
+                lightIntensity = 1.35;
+            } else if (sunHeight > -0.1) {
+                skyColor = new THREE.Color(0xd96b43);
+                fogColor = new THREE.Color(0xe28d6c);
+                lightColor = new THREE.Color(0xffaa55);
+                lightIntensity = 0.85;
+            } else {
+                skyColor = new THREE.Color(0x0a0f1d);
+                fogColor = new THREE.Color(0x0c1326);
+                lightColor = new THREE.Color(0x5c72a6);
+                lightIntensity = 0.25;
+            }
+
+            const currentW = WEATHER_TYPES[currentWeatherIndex].name;
+            if (currentW === 'FOG') {
+                fogColor.lerp(new THREE.Color(0x8090a0), 0.75);
+                scene.fog.density = 0.05;
+            } else if (currentW === 'THUNDERSTORM') {
+                skyColor.lerp(new THREE.Color(0x111625), 0.8);
+                scene.fog.density = 0.025;
+            } else {
+                scene.fog.density = 0.012;
+            }
+
+            scene.background = skyColor;
+            scene.fog.color = fogColor;
+            sunLight.color = lightColor;
+            sunLight.intensity = lightIntensity;
+            ambientLight.intensity = isDay ? 0.45 : 0.18;
+
+            const totalHours = (dayProgress * 24 + 6) % 24;
+            const hours = Math.floor(totalHours);
+            const minutes = Math.floor((totalHours % 1) * 60);
+            const ampm = hours >= 12 ? 'PM' : 'AM';
+            const displayHours = hours % 12 === 0 ? 12 : hours % 12;
+            const formattedTime = `${displayHours}:${minutes < 10 ? '0' : ''}${minutes} ${ampm}`;
+
+            document.getElementById('clock-display').innerText = formattedTime;
+            document.getElementById('clock-icon').className = isDay ? 'fa-solid fa-sun text-amber-400' : 'fa-solid fa-moon text-indigo-300';
+            document.getElementById('phase-display').innerText = isDay ? 'DAY' : 'NIGHT';
+
+            weatherTimer += delta;
+            if (weatherTimer >= WEATHER_DURATION) {
+                weatherTimer = 0;
+                currentWeatherIndex = (currentWeatherIndex + 1) % WEATHER_TYPES.length;
+                updateWeatherHUD();
+            }
+
+            const pos = weatherGeo.attributes.position.array;
+            if (currentW === 'RAIN' || currentW === 'THUNDERSTORM') {
+                weatherPoints.visible = true;
+                weatherMat.size = 0.08;
+                weatherMat.color.setHex(0x90caf9);
+                for (let i = 0; i < weatherParticleCount; i++) {
+                    pos[i * 3 + 1] -= 28 * delta;
+                    if (pos[i * 3 + 1] < -10) pos[i * 3 + 1] = 25;
+                }
+                weatherGeo.attributes.position.needsUpdate = true;
+            } else if (currentW === 'SNOW') {
+                weatherPoints.visible = true;
+                weatherMat.size = 0.18;
+                weatherMat.color.setHex(0xffffff);
+                for (let i = 0; i < weatherParticleCount; i++) {
+                    pos[i * 3 + 1] -= 3.5 * delta;
+                    pos[i * 3] += Math.sin(time + i) * 0.9 * delta;
+                    if (pos[i * 3 + 1] < -10) pos[i * 3 + 1] = 25;
+                }
+                weatherGeo.attributes.position.needsUpdate = true;
+            } else {
+                weatherPoints.visible = false;
+            }
+
+            if (currentW === 'THUNDERSTORM' && Math.random() < 0.005) {
+                const flash = document.getElementById('lightning-flash');
+                flash.style.opacity = '0.95';
+                sounds.playThunder();
+                setTimeout(() => { flash.style.opacity = '0'; }, 90);
+            }
+
+            sounds.updateAmbience(currentW);
+        }
+
+        function updateWeatherHUD() {
+            const w = WEATHER_TYPES[currentWeatherIndex];
+            document.getElementById('weather-display').innerText = w.name;
+            document.getElementById('weather-icon').className = `fa-solid ${w.icon} ${w.color}`;
+            const badge = document.getElementById('weather-badge');
+            badge.className = `bg-slate-900/85 backdrop-blur-md border ${w.border} px-3.5 py-1.5 rounded-xl shadow-lg flex items-center gap-2 text-xs font-extrabold text-cyan-300`;
+        }
+
+        // --- EATING & CPM LOGIC WITH SAVE SYNC ---
+        let eatAnimProgress = 1.0;
+
+        function eatCabbage() {
+            if (!gameState.gameStarted || crateModalOpen || pauseOpen) return;
+            eatAnimProgress = 0.0;
+            sounds.playCrunch();
+            triggerCrumbs();
+            spawnFloatingText("+1 Cabbage");
+
+            // Increment score and save persistently
+            gameState.score++;
+            savePlayerProgress();
+            // 3 wallet cabbages per 5 eaten, spread evenly so each bite gives 0 or 1
+            gameState.wallet += Math.floor((3 * gameState.score) / 5) - Math.floor((3 * (gameState.score - 1)) / 5);
+            saveEconomy();
+            updateWalletHUD();
+
+            const now = performance.now();
+            gameState.eatTimestamps.push(now);
+
+            updateHUD();
+        }
+
+        function spawnFloatingText(text) {
+            const container = document.getElementById('pop-text-container');
+            const el = document.createElement('div');
+            el.className = 'pop-text absolute font-black text-2xl sm:text-3xl text-emerald-400 drop-shadow-[0_4px_8px_rgba(0,0,0,0.95)] pointer-events-none';
+            el.innerText = text;
+
+            const rx = window.innerWidth / 2 + (Math.random() - 0.5) * 160;
+            const ry = window.innerHeight / 2 + (Math.random() - 0.5) * 100;
+            el.style.left = `${rx}px`;
+            el.style.top = `${ry}px`;
+
+            container.appendChild(el);
+            setTimeout(() => { if (container.contains(el)) container.removeChild(el); }, 750);
+        }
+
+        function updateHUD() {
+            document.getElementById('score-display').innerText = gameState.score.toLocaleString();
+        }
+
+        function calculateCPM() {
+            const now = performance.now();
+            gameState.eatTimestamps = gameState.eatTimestamps.filter(t => now - t <= 10000);
+            gameState.cpm = Math.round((gameState.eatTimestamps.length / 10.0) * 60);
+            document.getElementById('cpm-display').innerText = gameState.cpm;
+        }
+
+        // --- SINGLE-PLAYER KEY & MOUSE CONTROLS ---
+        window.addEventListener('keydown', (e) => {
+            if (!ffaActive && (e.key === 'e' || e.key === 'E')) eatCabbage();
+        });
+
+        document.addEventListener('mousedown', (e) => {
+            if (isPointerLocked && e.button === 0) { if (ffaActive) { if (ffaCurrentWeapon === 'portal') placeFFAPortal(0); else fireFFAWeapon(); } else eatCabbage(); }
+        });
+
+        document.addEventListener('contextmenu', (e) => {
+            if (ffaActive && isPointerLocked) {
+                e.preventDefault();
+                if (ffaCurrentWeapon === 'portal') placeFFAPortal(1);
+            }
+        });
+        // UI Action Buttons
+        document.getElementById('sound-btn').addEventListener('click', () => {
+            gameState.soundEnabled = !gameState.soundEnabled;
+            document.getElementById('sound-icon').className = gameState.soundEnabled ? 'fa-solid fa-volume-high text-emerald-400' : 'fa-solid fa-volume-xmark text-slate-500';
+            sounds.updateAmbience(WEATHER_TYPES[currentWeatherIndex].name);
+            
+            if (gameState.soundEnabled) {
+                bgMusic.play().catch(() => {});
+            } else {
+                bgMusic.pause();
+            }
+        });
+
+        document.getElementById('edit-name-btn').addEventListener('click', () => {
+            const name = prompt("Enter Muncher Name:", gameState.playerName);
+            if (name && name.trim().length > 0) {
+                gameState.playerName = name.trim().substring(0, 16);
+                localStorage.setItem('cabbage_player_name', gameState.playerName);
+                document.getElementById('player-name-display').innerText = gameState.playerName;
+                
+                // Load saved progress for the newly switched user profile
+                gameState.score = loadPlayerProgress(gameState.playerName);
+                loadEconomy(gameState.playerName);
+                ffaLoad();
+                ffaSave();
+                updateHUD();
+                }
+        });
+// --- MUNCHER SHOP: CRATES, SKINS, MARKET & WALLET ---
+        const CRATE_COST = 1000;
+
+        // Halving chain: each rarity is half the one before. Weights sum to exactly 100.
+        const RARITIES = [
+            { id: 'common',    name: 'Common',     color: '#9ca3af', weight: 50 },
+            { id: 'rare',      name: 'Rare',       color: '#3b82f6', weight: 25 },
+            { id: 'superRare', name: 'Super Rare', color: '#8b5cf6', weight: 12.5 },
+            { id: 'epic',      name: 'Epic',       color: '#ec4899', weight: 6.25 },
+            { id: 'legendary', name: 'Legendary',  color: '#f59e0b', weight: 3.125 },
+            { id: 'mythic',    name: 'Mythic',     color: '#14b8a6', weight: 1.5625 },
+            { id: 'wicked',    name: 'Wicked',     color: '#ef4444', weight: 1.5625 }
+        ];
+        const EVENT_RARITY = { id: 'event', name: 'Event', color: '#22d3ee' };
+
+        // The original cabbage colour. Crates never drop it. It is always available as "Original" in the Skins tab.
+        const ORIGINAL_TINT = 0x81c784;
+
+        // tint = cabbage core colour when equipped
+        const SKINS = [
+            { id: 'lilac_leaf',    name: 'Lilac Leaf',    rarity: 'common',    tint: 0xce93d8 },
+            { id: 'peach_heart',   name: 'Peach Heart',   rarity: 'common',    tint: 0xffab91 },
+            { id: 'speckled',      name: 'Speckled',      rarity: 'rare',      tint: 0x4db6ac },
+            { id: 'frost_tip',     name: 'Frost Tip',     rarity: 'rare',      tint: 0xb3e5fc },
+            { id: 'gold_veins',    name: 'Gold Veins',    rarity: 'superRare', tint: 0xfdd835 },
+            { id: 'neon_core',     name: 'Neon Core',     rarity: 'epic',      tint: 0x69f0ae },
+            { id: 'royal_crown',   name: 'Royal Crown',   rarity: 'legendary', tint: 0xffb300 },
+            { id: 'ghost_stalk',   name: 'Ghost Stalk',   rarity: 'mythic',    tint: 0xe0e0e0 },
+            { id: 'cabbage_demon', name: 'Cabbage Demon', rarity: 'wicked',    tint: 0xb71c1c }
+        ];
+
+        // Event skins only drop from the event crate while an event is live
+        const EVENT_SKINS = [
+            { id: 'event_placeholder', name: 'Event Placeholder', rarity: 'event', tint: 0xff80ab }
+        ];
+        let eventActive = false;
+
+        // Cabbage parody companies on the market
+        const COMPANIES = [
+            { ticker: 'CBGE', name: 'Cabbage Corp',     start: 120, vol: 0.06 },
+            { ticker: 'LEAF', name: 'Leafy Labs',       start: 80,  vol: 0.08 },
+            { ticker: 'CRNC', name: 'Crunchy Holdings', start: 200, vol: 0.05 },
+            { ticker: 'SPRT', name: 'Sprout Dynamics',  start: 45,  vol: 0.12 },
+            { ticker: 'HEAD', name: 'Head Ventures',    start: 310, vol: 0.04 }
+        ];
+        const MARKET_TICK = 4; // seconds between price moves
+
+        // --- STATE ---
+        let inventory = [];          // owned skin ids (duplicates allowed)
+        let equippedSkinId = null;   // null = Original
+        let portfolio = {};          // ticker -> { shares, cost }
+        let marketPrices = {};       // ticker -> { price, history[] }
+        let marketTimer = 0;
+        let crateModalOpen = false;
+        let shopTab = 'crates';
+        let crateFromPause = false;
+        let pauseOpen = false;
+
+        const rarityById = id => (id === 'event' ? EVENT_RARITY : RARITIES.find(r => r.id === id));
+        const findSkin = id => [...SKINS, ...EVENT_SKINS].find(s => s.id === id) || null;
+        const pickRandom = arr => arr[Math.floor(Math.random() * arr.length)];
+        const tintHex = t => '#' + t.toString(16).padStart(6, '0');
+        const parseJSON = (str, fallback) => {
+            try { return JSON.parse(str) ?? fallback; } catch (e) { return fallback; }
+        };
+
+        function rollRarity() {
+            const total = RARITIES.reduce((s, r) => s + r.weight, 0);
+            let roll = Math.random() * total;
+            for (const r of RARITIES) {
+                if ((roll -= r.weight) < 0) return r;
+            }
+            return RARITIES[RARITIES.length - 1];
+        }
+
+        // --- PER-PLAYER SAVE (wallet, skins, portfolio) ---
+        function loadEconomy(name) {
+            const key = name.toLowerCase();
+            gameState.wallet = parseInt(localStorage.getItem(`cabbage_wallet_${key}`) || '0', 10);
+            inventory = parseJSON(localStorage.getItem(`cabbage_inventory_${key}`), []);
+            portfolio = parseJSON(localStorage.getItem(`cabbage_portfolio_${key}`), {});
+            equippedSkinId = localStorage.getItem(`cabbage_equipped_${key}`) || null;
+            applyEquippedSkin();
+            updateWalletHUD();
+        }
+
+        function saveEconomy() {
+            if (!gameState.playerName) return;
+            const key = gameState.playerName.toLowerCase();
+            localStorage.setItem(`cabbage_wallet_${key}`, String(gameState.wallet));
+            localStorage.setItem(`cabbage_inventory_${key}`, JSON.stringify(inventory));
+            localStorage.setItem(`cabbage_portfolio_${key}`, JSON.stringify(portfolio));
+            localStorage.setItem(`cabbage_equipped_${key}`, equippedSkinId || '');
+        }
+
+        function applyEquippedSkin() {
+            if (!cabbageCoreMat) return;
+            const skin = findSkin(equippedSkinId);
+            cabbageCoreMat.color.setHex(skin ? skin.tint : ORIGINAL_TINT);
+        }
+
+        function updateWalletHUD() {
+            document.getElementById('wallet-display').innerText = gameState.wallet.toLocaleString();
+        }
+
+        function setCabbageEvent(active) {
+            eventActive = active;
+            if (crateModalOpen) renderShop();
+        }
+
+        function showCrateResult(html) {
+            const el = document.getElementById('crate-result');
+            el.innerHTML = html;
+            el.classList.remove('crate-reveal');
+            void el.offsetWidth; // restart animation
+            el.classList.add('crate-reveal');
+        }
+
+        function setShopMessage(text, tone) {
+            const el = document.getElementById('shop-message');
+            el.innerText = text;
+            el.style.color = tone === 'bad' ? '#f87171' : '#34d399';
+        }
+
+        // --- CRATES ---
+        function openCrate(type) {
+            const isEvent = type === 'event';
+            if (isEvent && (!eventActive || EVENT_SKINS.length === 0)) {
+                return showCrateResult('<span class="text-slate-400">The event crate is not available right now.</span>');
+            }
+            if (gameState.wallet < CRATE_COST) {
+                return showCrateResult(`<span class="text-red-400 font-bold">Not enough cabbages. You need ${CRATE_COST.toLocaleString()}.</span>`);
+            }
+
+            let rarity, skin;
+            if (isEvent) {
+                rarity = EVENT_RARITY;
+                skin = pickRandom(EVENT_SKINS);
+            } else {
+                rarity = rollRarity();
+                skin = pickRandom(SKINS.filter(s => s.rarity === rarity.id));
+            }
+
+            gameState.wallet -= CRATE_COST;
+            inventory.push(skin.id);
+            saveEconomy();
+            updateWalletHUD();
+            renderShop();
+
+            showCrateResult(`
+                <div class="text-center">
+                    <div class="text-[11px] uppercase font-black tracking-widest" style="color:${rarity.color}">${rarity.name}</div>
+                    <div class="text-2xl font-black" style="color:${rarity.color}">${escapeHTML(skin.name)}</div>
+                    <div class="text-xs text-slate-400 mt-1">Added to your skins</div>
+                </div>
+            `);
+        }
+
+        function renderCrates() {
+            document.getElementById('odds-list').innerHTML = RARITIES.map(r =>
+                `<div class="flex justify-between" style="color:${r.color}"><span>${r.name}</span><span>${r.weight}%</span></div>`
+            ).join('');
+        }
+
+        // --- SKINS ---
+        function equipSkin(id) {
+            equippedSkinId = id;
+            applyEquippedSkin();
+            saveEconomy();
+            renderSkins();
+        }
+
+        function renderSkins() {
+            const grid = document.getElementById('skins-grid');
+            const counts = {};
+            inventory.forEach(id => { counts[id] = (counts[id] || 0) + 1; });
+
+            const cards = [{ id: null, name: 'Original', tint: ORIGINAL_TINT, tier: 'Default', color: tintHex(ORIGINAL_TINT), count: 1 }];
+            Object.keys(counts).forEach(id => {
+                const s = findSkin(id);
+                if (!s) return;
+                const r = rarityById(s.rarity);
+                cards.push({ id, name: s.name, tint: s.tint, tier: r.name, color: r.color, count: counts[id] });
+            });
+
+            grid.innerHTML = cards.map(c => {
+                const on = equippedSkinId === c.id;
+                return `
+                <div class="rounded-2xl border-2 p-3 flex flex-col gap-2 bg-slate-800/70" style="border-color:${c.color}">
+                    <div class="h-16 rounded-xl border border-white/10" style="background:${tintHex(c.tint)}"></div>
+                    <div class="font-black text-sm truncate" style="color:${c.color}">${escapeHTML(c.name)}${c.count > 1 ? ' x' + c.count : ''}</div>
+                    <div class="text-[10px] uppercase tracking-wider text-slate-400">${c.tier}</div>
+                    <button data-skin="${c.id || ''}" class="skin-equip-btn w-full text-xs font-bold py-2 rounded-lg cursor-pointer transition ${on ? 'bg-emerald-500 text-slate-950' : 'bg-slate-700 hover:bg-slate-600 text-white'}">${on ? 'Equipped' : 'Equip'}</button>
+                </div>`;
+            }).join('');
+        }
+
+        // --- MARKET ---
+        function initMarket() {
+            marketPrices = parseJSON(localStorage.getItem('cabbage_market'), {});
+            COMPANIES.forEach(c => {
+                if (!marketPrices[c.ticker]) marketPrices[c.ticker] = { price: c.start, history: [c.start] };
+            });
+        }
+
+        function saveMarket() {
+            localStorage.setItem('cabbage_market', JSON.stringify(marketPrices));
+        }
+
+        function tickMarket(delta) {
+            marketTimer += delta;
+            if (marketTimer < MARKET_TICK) return;
+            marketTimer = 0;
+
+            COMPANIES.forEach(c => {
+                const m = marketPrices[c.ticker];
+                // random walk with a slight pull back toward the starting price
+                const pull = ((c.start - m.price) / c.start) * 0.02;
+                const change = (Math.random() - 0.5) * 2 * c.vol + pull;
+                m.price = Math.max(1, Math.round(m.price * (1 + change) * 100) / 100);
+                m.history.push(m.price);
+                if (m.history.length > 40) m.history.shift();
+            });
+
+            saveMarket();
+            if (crateModalOpen && shopTab === 'market') renderMarket();
+        }
+
+        function buyShares(ticker, qty) {
+            const cost = Math.ceil(marketPrices[ticker].price * qty);
+            if (gameState.wallet < cost) {
+                return setShopMessage(`Not enough cabbages. ${qty} share(s) cost ${cost.toLocaleString()}.`, 'bad');
+            }
+            gameState.wallet -= cost;
+            const p = portfolio[ticker] || { shares: 0, cost: 0 };
+            p.shares += qty;
+            p.cost += cost;
+            portfolio[ticker] = p;
+            afterTrade(`Bought ${qty} ${ticker} for ${cost.toLocaleString()}.`);
+        }
+
+        function sellShares(ticker, qty) {
+            const p = portfolio[ticker];
+            if (!p || p.shares < qty) return setShopMessage('You do not own that many shares.', 'bad');
+            const proceeds = Math.floor(marketPrices[ticker].price * qty);
+            p.cost -= p.cost * (qty / p.shares);
+            p.shares -= qty;
+            if (p.shares === 0) delete portfolio[ticker];
+            gameState.wallet += proceeds;
+            afterTrade(`Sold ${qty} ${ticker} for ${proceeds.toLocaleString()}.`);
+        }
+
+        function afterTrade(msg) {
+            saveEconomy();
+            updateWalletHUD();
+            renderShop();
+            setShopMessage(msg, 'good');
+        }
+
+        function sparkline(points, color) {
+            if (points.length < 2) return '<div class="h-12"></div>';
+            const w = 260, h = 48;
+            const min = Math.min(...points), max = Math.max(...points);
+            const range = (max - min) || 1;
+            const step = w / (points.length - 1);
+            const d = points.map((v, i) => `${(i * step).toFixed(1)},${(h - ((v - min) / range) * (h - 6) - 3).toFixed(1)}`).join(' ');
+            return `<svg viewBox="0 0 ${w} ${h}" class="w-full h-12" preserveAspectRatio="none"><polyline points="${d}" fill="none" stroke="${color}" stroke-width="2" vector-effect="non-scaling-stroke" stroke-linejoin="round"/></svg>`;
+        }
+
+        function renderMarket() {
+            document.getElementById('market-list').innerHTML = COMPANIES.map(c => {
+                const m = marketPrices[c.ticker];
+                const prev = m.history.length > 1 ? m.history[m.history.length - 2] : m.price;
+                const pct = ((m.price - prev) / prev) * 100;
+                const color = pct >= 0 ? '#34d399' : '#f87171';
+                const p = portfolio[c.ticker];
+                const shares = p ? p.shares : 0;
+                const value = p ? Math.floor(m.price * p.shares) : 0;
+                const pl = p ? value - Math.round(p.cost) : 0;
+                const plColor = pl >= 0 ? '#34d399' : '#f87171';
+
+                return `
+                <div class="bg-slate-800/70 border border-slate-700 rounded-2xl p-4 flex flex-col gap-3">
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <div class="font-black text-white">${escapeHTML(c.name)}</div>
+                            <div class="text-[10px] font-bold text-slate-400 tracking-widest">${c.ticker}</div>
+                        </div>
+                        <div class="text-right">
+                            <div class="font-black text-lg text-white">${m.price.toFixed(2)}</div>
+                            <div class="text-xs font-bold" style="color:${color}">${pct >= 0 ? '&#9650;' : '&#9660;'} ${Math.abs(pct).toFixed(2)}%</div>
+                        </div>
+                    </div>
+                    ${sparkline(m.history, color)}
+                    <div class="flex justify-between text-xs text-slate-400">
+                        <span>Owned <strong class="text-white">${shares}</strong></span>
+                        <span>Value <strong class="text-white">${value.toLocaleString()}</strong></span>
+                        <span>P/L <strong style="color:${plColor}">${pl >= 0 ? '+' : ''}${pl.toLocaleString()}</strong></span>
+                    </div>
+                    <div class="grid grid-cols-4 gap-2">
+                        <button data-trade="buy" data-ticker="${c.ticker}" data-qty="1" class="trade-btn bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-black py-2 rounded-lg transition active:scale-95 cursor-pointer">Buy 1</button>
+                        <button data-trade="buy" data-ticker="${c.ticker}" data-qty="10" class="trade-btn bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black py-2 rounded-lg transition active:scale-95 cursor-pointer">Buy 10</button>
+                        <button data-trade="sell" data-ticker="${c.ticker}" data-qty="1" class="trade-btn bg-slate-700 hover:bg-slate-600 text-white text-xs font-black py-2 rounded-lg transition active:scale-95 cursor-pointer">Sell 1</button>
+                        <button data-trade="sell-all" data-ticker="${c.ticker}" class="trade-btn bg-red-500/80 hover:bg-red-500 text-white text-xs font-black py-2 rounded-lg transition active:scale-95 cursor-pointer">Sell All</button>
+                    </div>
+                </div>`;
+            }).join('');
+        }
+
+        // --- SHOP WINDOW & TABS ---
+        function renderShop() {
+            document.getElementById('crate-balance').innerText = gameState.wallet.toLocaleString();
+            document.getElementById('open-event-btn').classList.toggle('hidden', !eventActive);
+            if (shopTab === 'crates') renderCrates();
+            if (shopTab === 'skins') renderSkins();
+            if (shopTab === 'market') renderMarket();
+        }
+
+        function setShopTab(tab) {
+            shopTab = tab;
+            document.querySelectorAll('.shop-tab').forEach(b => {
+                const on = b.dataset.tab === tab;
+                b.className = 'shop-tab flex-1 py-2.5 rounded-xl font-black text-sm transition cursor-pointer ' +
+                    (on ? 'bg-amber-500 text-slate-950' : 'bg-slate-800 text-slate-300 hover:bg-slate-700');
+            });
+            ['crates', 'skins', 'market'].forEach(t => {
+                document.getElementById(`panel-${t}`).classList.toggle('hidden', t !== tab);
+            });
+            renderShop();
+        }
+
+        function openCrateModal() {
+            crateModalOpen = true;
+            const modal = document.getElementById('crate-modal');
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+            setShopTab(shopTab);
+            document.exitPointerLock();
+        }
+
+        function closeCrateModal() {
+            crateModalOpen = false;
+            const modal = document.getElementById('crate-modal');
+            modal.classList.add('hidden');
+            modal.classList.remove('flex');
+            if (crateFromPause) {
+                crateFromPause = false;
+                setPaused(true);
+            } else {
+                requestLock();
+            }
+        }
+
+        // --- PAUSE MENU (P) ---
+        function updatePauseMenuMode() {
+            const inFFA = ffaActive;
+            document.getElementById('pause-title').textContent = inFFA ? (ffaMode==='horror'?'HORROR MODE PAUSED':'FFA MULTIPLAYER PAUSED') : 'PAUSED';
+            document.getElementById('pause-mode-note').textContent = inFFA
+                ? (ffaMode==='horror'?'The ZombCabbages are paused. Check your loot or leave the night shift.':'The field is frozen. Visit the armoury or head back to munching.')
+                : 'Choose a mode or manage your cabbage empire.';
+            document.getElementById('pause-ffa-open-btn').classList.toggle('hidden', inFFA);
+            document.getElementById('pause-ffa-shop-btn').classList.toggle('hidden', !inFFA);
+            document.getElementById('pause-ffa-exit-btn').classList.toggle('hidden', !inFFA);
+            document.getElementById('pause-crates-btn').classList.toggle('hidden', inFFA);
+        }
+
+        function setPaused(on) {
+            pauseOpen = on;
+            if (on) updatePauseMenuMode();
+            const menu = document.getElementById('pause-menu');
+            menu.classList.toggle('hidden', !on);
+            menu.classList.toggle('flex', on);
+            if (on) document.exitPointerLock();
+            else requestLock();
+        }
+
+        // --- CUSTOM KEY BINDINGS (saved locally) ---
+        const CONTROL_DEFAULTS = {
+            forward:'KeyW', back:'KeyS', left:'KeyA', right:'KeyD', jump:'Space', sprint:'ShiftLeft',
+            reload:'KeyR', pickup:'KeyE', gadget:'KeyG', heal:'KeyH', vehicle:'KeyF',
+            weapon1:'Digit1', weapon2:'Digit2', weapon3:'Digit3', weapon4:'Digit4', weapon5:'Digit5', weapon6:'Digit6'
+        };
+        const CONTROL_LABELS = {forward:'Move forward',back:'Move backward',left:'Move left',right:'Move right',jump:'Jump',sprint:'Sprint',reload:'Reload',pickup:'Pick up',gadget:'Peel bomb',heal:'Cabbage-Cola',vehicle:'Vehicle',weapon1:'Weapon slot 1',weapon2:'Weapon slot 2',weapon3:'Weapon slot 3',weapon4:'Weapon slot 4',weapon5:'Weapon slot 5',weapon6:'Weapon slot 6'};
+        let controlBinds = {...CONTROL_DEFAULTS};
+        try { const saved=JSON.parse(localStorage.getItem('cabbage_control_binds')||'null'); if(saved) controlBinds={...CONTROL_DEFAULTS,...saved}; } catch(_) {}
+        let waitingForBind = null;
+        const codeLabel = code => ({Space:'SPACE',ShiftLeft:'LEFT SHIFT',ShiftRight:'RIGHT SHIFT',ControlLeft:'LEFT CTRL',ControlRight:'RIGHT CTRL',AltLeft:'LEFT ALT',ArrowUp:'↑',ArrowDown:'↓',ArrowLeft:'←',ArrowRight:'→',Backquote:'`'}[code] || (code||'').replace(/^Key/,'').replace(/^Digit/,'').replace(/^Numpad/,'NUM '));
+        function renderControlBinds(){
+            const list=document.getElementById('controls-remap-list'); if(!list)return;
+            list.innerHTML=Object.keys(CONTROL_DEFAULTS).map(action=>`<button type="button" data-bind-action="${action}" class="rounded-lg border border-slate-700 bg-slate-900 px-2 py-2 text-left hover:border-indigo-400"><span class="block text-[9px] uppercase tracking-wide text-slate-400">${CONTROL_LABELS[action]}</span><strong class="text-xs text-white">${codeLabel(controlBinds[action])}</strong></button>`).join('');
+        }
+        document.getElementById('pause-controls-btn').addEventListener('click',()=>{
+            const panel=document.getElementById('controls-remap-panel'); panel.classList.toggle('hidden'); panel.classList.toggle('flex'); renderControlBinds();
+        });
+        document.getElementById('controls-remap-list').addEventListener('click',e=>{
+            const b=e.target.closest('[data-bind-action]'); if(!b)return;
+            waitingForBind=b.dataset.bindAction;
+            document.getElementById('controls-remap-status').textContent=`Press a key for ${CONTROL_LABELS[waitingForBind]}…`;
+        });
+        document.getElementById('controls-reset-btn').addEventListener('click',()=>{
+            controlBinds={...CONTROL_DEFAULTS}; localStorage.setItem('cabbage_control_binds',JSON.stringify(controlBinds));
+            waitingForBind=null; renderControlBinds(); document.getElementById('controls-remap-status').textContent='Default controls restored.';
+        });
+        function actionForCode(code){ return Object.keys(controlBinds).find(action=>controlBinds[action]===code); }
+        function canonicalKeyForAction(action){ return ({forward:'KeyW',back:'KeyS',left:'KeyA',right:'KeyD',jump:'Space',sprint:'ShiftLeft'})[action]; }
+        window.addEventListener('keydown',e=>{
+            if(!waitingForBind)return;
+            e.preventDefault(); e.stopImmediatePropagation();
+            if(['Escape','Tab','Enter'].includes(e.code)) { waitingForBind=null; document.getElementById('controls-remap-status').textContent='Binding cancelled.'; return; }
+            const duplicate=Object.keys(controlBinds).find(a=>a!==waitingForBind&&controlBinds[a]===e.code);
+            if(duplicate){document.getElementById('controls-remap-status').textContent=`Already used by ${CONTROL_LABELS[duplicate]}. Choose another key.`;return;}
+            controlBinds[waitingForBind]=e.code; localStorage.setItem('cabbage_control_binds',JSON.stringify(controlBinds));
+            const name=CONTROL_LABELS[waitingForBind]; waitingForBind=null; renderControlBinds(); document.getElementById('controls-remap-status').textContent=`${name} updated.`;
+        },true);
+        renderControlBinds();
+
+        window.addEventListener('keydown', (e) => {
+            if (e.key.toLowerCase() !== 'p' || e.repeat || !gameState.gameStarted || crateModalOpen || ffaShopOpen || ffaMenuOpen) return;
+            if (document.activeElement && document.activeElement.tagName === 'INPUT') return;
+            setPaused(!pauseOpen);
+        });
+
+        document.getElementById('pause-resume-btn').addEventListener('click', () => setPaused(false));
+        document.getElementById('pause-ffa-open-btn').addEventListener('click', () => {
+            pauseOpen = false;
+            const menu = document.getElementById('pause-menu');
+            menu.classList.add('hidden'); menu.classList.remove('flex');
+            openFFAMenu();
+        });
+        document.getElementById('pause-ffa-shop-btn').addEventListener('click', () => {
+            pauseOpen = false;
+            const menu = document.getElementById('pause-menu');
+            menu.classList.add('hidden'); menu.classList.remove('flex');
+            openFFAShop();
+        });
+        document.getElementById('pause-ffa-exit-btn').addEventListener('click', () => {
+            pauseOpen = false;
+            const menu = document.getElementById('pause-menu');
+            menu.classList.add('hidden'); menu.classList.remove('flex');
+            leaveFFA();
+        });
+        document.getElementById('pause-crates-btn').addEventListener('click', () => {
+            crateFromPause = true;
+            pauseOpen = false;
+            document.getElementById('pause-menu').classList.add('hidden');
+            document.getElementById('pause-menu').classList.remove('flex');
+            openCrateModal();
+        });
+        document.getElementById('pause-sound-btn').addEventListener('click', () => document.getElementById('sound-btn').click());
+        document.getElementById('pause-name-btn').addEventListener('click', () => document.getElementById('edit-name-btn').click());
+        document.getElementById('pause-reset-btn').addEventListener('click', () => {
+            if (!confirm('Reset this Muncher profile, money and FFA unlocks?')) return;
+            const key=(gameState.playerName||'player').toLowerCase();
+            gameState.score=0;gameState.wallet=0;inventory=[];equippedSkinId=null;portfolio={};
+            ffaOwnedWeapons=['popper'];ffaOwnedPets=[];ffaEquippedPet=null;ffaOwnedGadgets=[];ffaCola=0;ffaPeelBombs=0;ffaCurrentWeapon='popper';ffaOwnedSkins=['field'];ffaEquippedSkin='field';
+            ['cabbage_progress_','cabbage_wallet_','cabbage_inventory_','cabbage_equipped_','cabbage_portfolio_','cabbage_market_','cabbage_ffa_weapons_','cabbage_ffa_pets_','cabbage_ffa_pet_','cabbage_ffa_gadgets_','cabbage_ffa_cola_','cabbage_ffa_peels_'].forEach(prefix=>localStorage.removeItem(prefix+key));
+            savePlayerProgress();saveEconomy();ffaSave();updateHUD();updateWalletHUD();ffaUpdateHUD();
+            if(ffaActive){if(ffaWeaponView)ffaMakeWeaponView();if(ffaPetMesh){scene.remove(ffaPetMesh);ffaPetMesh=null;}}
+            document.getElementById('pause-menu').classList.add('hidden');document.getElementById('pause-menu').classList.remove('flex');pauseOpen=false;
+            requestLock();
+        });
+
+        // --- SHOP WIRING ---
+        document.getElementById('crate-btn').addEventListener('click', openCrateModal);
+        document.getElementById('crate-close-btn').addEventListener('click', closeCrateModal);
+        document.getElementById('open-standard-btn').addEventListener('click', () => openCrate('standard'));
+        document.getElementById('open-event-btn').addEventListener('click', () => openCrate('event'));
+        document.querySelectorAll('.shop-tab').forEach(b => b.addEventListener('click', () => setShopTab(b.dataset.tab)));
+
+        document.getElementById('skins-grid').addEventListener('click', (e) => {
+            const btn = e.target.closest('.skin-equip-btn');
+            if (btn) equipSkin(btn.dataset.skin || null);
+        });
+
+        document.getElementById('market-list').addEventListener('click', (e) => {
+            const btn = e.target.closest('.trade-btn');
+            if (!btn) return;
+            const ticker = btn.dataset.ticker;
+            if (btn.dataset.trade === 'buy') {
+                buyShares(ticker, parseInt(btn.dataset.qty, 10));
+            } else if (btn.dataset.trade === 'sell') {
+                sellShares(ticker, parseInt(btn.dataset.qty, 10));
+            } else {
+                const owned = portfolio[ticker] ? portfolio[ticker].shares : 0;
+                if (owned > 0) sellShares(ticker, owned);
+                else setShopMessage('You do not own any shares of that company.', 'bad');
+            }
+        });
+
+        initMarket();
+
+        // ============================================================
+        // FFA: FREE FOR ALL FOREVER (offline bot arena)
+        // ============================================================
+        const FFA_WEAPONS = [
+            { id:'popper', name:'Cabbage Popper', cost:0, damage:24, rate:0.42, speed:38, color:0x8ee56f, desc:'Your trusty starter pea-shooter.' },
+            { id:'leafblower', name:'Leaf Blower SMG', cost:350, damage:10, rate:0.105, speed:43, color:0x7de3c2, desc:'Fires leaves at a deeply irresponsible speed.' },
+            { id:'cauli', name:'Cauli Cannon', cost:650, damage:48, rate:0.9, speed:25, color:0xf0e7d1, desc:'Slow, chunky and very cauliflower.' },
+            { id:'brussels', name:'Brussels Blaster', cost:900, damage:17, rate:0.26, speed:48, color:0x93bd45, desc:'A three-shot burst of tiny green doom.' },
+            { id:'sniper', name:'Cabbage Sniper', cost:1250, damage:85, rate:1.25, speed:90, color:0xa6d9ff, desc:'Accurate, loud and completely unnecessary.' },
+            { id:'portal', name:'Definitely Not a Portal Gun', cost:1800, damage:0, rate:0.6, speed:0, color:0x9f7aea, desc:'Left click portal A, right click portal B, walk through to teleport.' }
+        ];
+        const FFA_PETS = [
+            { id:'sprouty', name:'Sprouty', cost:450, desc:'A tiny cabbage that fires at nearby opponents.' },
+            { id:'medic', name:'Medic Leaf', cost:700, desc:'Gives you 15 HP every 18 seconds when hurt.' },
+            { id:'coinling', name:'Coinling', cost:550, desc:'Finds extra money for every bot you defeat.' },
+            { id:'chomper', name:'Chomper Jr.', cost:950, desc:'A bitey little bodyguard with stronger attacks.' }
+        ];
+        const FFA_GADGETS = [
+            { id:'leafhog', name:'LEAFHOG MK.II', cost:1200, desc:'A cabbage-field buggy. Press F to hop in and zoom around.' },
+            { id:'cola', name:'Cabbage-Cola', cost:180, desc:'A suspiciously fizzy drink. Press H to restore 35 HP.' },
+            { id:'peelbomb', name:'Banana Peel Bomb', cost:300, desc:'Press G to stun and damage nearby bots. Yes, it is a banana.' },
+            { id:'golden', name:'Golden Cabbage Trophy', cost:800, desc:'A shiny cosmetic trophy. It does absolutely nothing.' }
+        ];
+        const FFA_SKINS = [
+            { id:'field', name:'Field Operative', cost:0, color:0x6f8756, icon:'🥬', desc:'Your original field uniform.' },
+            { id:'toxic', name:'Toxic Glow', cost:650, color:0x56e36e, icon:'☣️', desc:'Radioactive green. Slightly concerning.' },
+            { id:'midnight', name:'Midnight Moss', cost:950, color:0x53638d, icon:'🌙', desc:'Dark blue armour for sneaky cabbage business.' },
+            { id:'goldleaf', name:'Golden Leaf', cost:1600, color:0xd7a92e, icon:'👑', desc:'Shiny enough to be seen from space.' },
+            { id:'zombified', name:'Zombified', cost:0, color:0x668b55, icon:'🧟', desc:'A rare outfit found in Horror Mode.' }
+        ];
+        let ffaMode = 'ffa';
+        let ffaBotsEnabled = true;
+        let ffaKills = 0, ffaDeaths = 0, ffaHealth = 100, ffaMaxHealth = 100;
+        let ffaBots = [], ffaShots = [], ffaArena = null, ffaWeaponView = null, ffaVehicle = null;
+        let ffaCurrentWeapon = 'popper', ffaOwnedWeapons = ['popper'];
+        let ffaAmmo = {}, ffaPickups = [], ffaReloading = false, ffaReloadTimer = 0, ffaRecoil = 0;
+        let ffaOwnedPets = [], ffaEquippedPet = null, ffaOwnedGadgets = [], ffaCola = 0, ffaPeelBombs = 0;
+        let ffaOwnedSkins = ['field'], ffaEquippedSkin = 'field';
+        let horrorZombies = [], horrorLoot = [], horrorWave = 1, horrorBreakTimer = 0, horrorBreakAnnounced = false, horrorLight = null, horrorOriginalLight = null;
+        let ffaPetMesh = null, ffaPetCooldown = 0, ffaPetHealTimer = 0;
+        let ffaLastShot = 0, ffaJumpVelocity = 0, ffaOnGround = true, ffaDriving = false;
+        const ffaMoveVelocity = new THREE.Vector3();
+        let ffaJumpQueued = false;
+        let ffaPortalA = null, ffaPortalB = null, ffaPortalCooldown = 0;
+        let ffaShopTab = 'weapons', ffaToastTimer = null;
+        const ffaKeys = Object.create(null);
+        const ffaClock = new THREE.Clock();
+        const ffaRaycaster = new THREE.Raycaster();
+        const ffaArenaSize = 124;
+        const ffaArenaHalf = ffaArenaSize / 2;
+        const FFA_PLAYER_RADIUS = 0.48;
+        let ffaColliders = [];
+        let ffaGroundTexture = null, ffaDirtTexture = null, ffaWoodTexture = null, ffaFabricTexture = null;
+
+        function ffaSave() {
+            if (!gameState.playerName) return;
+            const k = gameState.playerName.toLowerCase();
+            localStorage.setItem('cabbage_ffa_weapons_' + k, JSON.stringify(ffaOwnedWeapons));
+            localStorage.setItem('cabbage_ffa_pets_' + k, JSON.stringify(ffaOwnedPets));
+            localStorage.setItem('cabbage_ffa_pet_' + k, ffaEquippedPet || '');
+            localStorage.setItem('cabbage_ffa_gadgets_' + k, JSON.stringify(ffaOwnedGadgets));
+            localStorage.setItem('cabbage_ffa_cola_' + k, String(ffaCola));
+            localStorage.setItem('cabbage_ffa_peels_' + k, String(ffaPeelBombs));
+            localStorage.setItem('cabbage_ffa_skins_' + k, JSON.stringify(ffaOwnedSkins));
+            localStorage.setItem('cabbage_ffa_skin_' + k, ffaEquippedSkin || 'field');
+            saveEconomy();
+        }
+        function ffaLoad() {
+            const k = (gameState.playerName || 'player').toLowerCase();
+            const readArray = (key, fallback) => { try { const v=JSON.parse(localStorage.getItem(key)||'null'); return Array.isArray(v)?v:fallback; } catch(_) { return fallback; } };
+            ffaOwnedWeapons = readArray('cabbage_ffa_weapons_' + k, ['popper']);
+            if (!ffaOwnedWeapons.includes('popper')) ffaOwnedWeapons.unshift('popper');
+            ffaOwnedPets = readArray('cabbage_ffa_pets_' + k, []);
+            ffaEquippedPet = localStorage.getItem('cabbage_ffa_pet_' + k) || null;
+            if (!ffaOwnedPets.includes(ffaEquippedPet)) ffaEquippedPet = null;
+            ffaOwnedGadgets = readArray('cabbage_ffa_gadgets_' + k, []);
+            ffaCola = Math.max(0, parseInt(localStorage.getItem('cabbage_ffa_cola_' + k) || '0',10) || 0);
+            ffaPeelBombs = Math.max(0, parseInt(localStorage.getItem('cabbage_ffa_peels_' + k) || '0',10) || 0);
+            ffaOwnedSkins = readArray('cabbage_ffa_skins_' + k, ['field']);
+            if (!ffaOwnedSkins.includes('field')) ffaOwnedSkins.unshift('field');
+            ffaEquippedSkin = localStorage.getItem('cabbage_ffa_skin_' + k) || 'field';
+            if (!ffaOwnedSkins.includes(ffaEquippedSkin)) ffaEquippedSkin='field';
+            if (!ffaOwnedWeapons.includes(ffaCurrentWeapon)) ffaCurrentWeapon='popper';
+        }
+        function ffaToast(message, good=true) {
+            const el=document.getElementById('ffa-toast');
+            el.textContent=message;
+            el.className='absolute left-1/2 top-24 -translate-x-1/2 rounded-xl border px-5 py-3 text-center font-black shadow-2xl transition-opacity ' + (good?'border-emerald-300/50 bg-slate-950/90 text-emerald-200':'border-rose-300/50 bg-slate-950/90 text-rose-200');
+            el.style.opacity='1';
+            clearTimeout(ffaToastTimer);
+            ffaToastTimer=setTimeout(()=>{el.style.opacity='0';},1900);
+        }
+        function ffaWalletUpdate() {
+            updateWalletHUD();
+            const el=document.getElementById('ffa-wallet'); if(el) el.textContent=gameState.wallet.toLocaleString();
+            const bal=document.getElementById('ffa-shop-balance'); if(bal) bal.textContent=gameState.wallet.toLocaleString();
+        }
+        function ffaUpdateHUD() {
+            const label=document.getElementById('ffa-mode-label');
+            label.textContent=ffaMode==='horror'?'HORROR MODE • NIGHT SHIFT':(ffaBots.length===0?'FFA FREE ROAM':(ffaMode==='duel'?'FFA MULTIPLAYER • 1V1':'FFA MULTIPLAYER'));
+            label.className='text-[10px] font-black uppercase tracking-[.18em] '+(ffaMode==='horror'?'text-emerald-300':'text-rose-300');
+            const wave=document.getElementById('ffa-wave');
+            wave.classList.toggle('hidden',ffaMode!=='horror');
+            if(ffaMode==='horror')wave.textContent='WAVE '+horrorWave;
+            document.getElementById('ffa-kills').textContent=ffaKills;
+            document.getElementById('ffa-deaths').textContent=ffaDeaths;
+            document.getElementById('ffa-score').textContent=ffaKills-ffaDeaths;
+            document.getElementById('ffa-health-text').textContent=Math.ceil(ffaHealth)+' / '+ffaMaxHealth+' HP';
+            document.getElementById('ffa-health-bar').style.width=Math.max(0,ffaHealth/ffaMaxHealth*100)+'%';
+            document.getElementById('ffa-health-bar').className='h-full transition-all '+(ffaHealth>55?'bg-emerald-400':ffaHealth>25?'bg-amber-400':'bg-rose-500');
+            const w=FFA_WEAPONS.find(x=>x.id===ffaCurrentWeapon);
+            document.getElementById('ffa-weapon-name').textContent=w?w.name.toUpperCase():'CABBAGE POPPER';
+            const ammoEl=document.getElementById('ffa-ammo'); if(ammoEl){const a=ffaAmmo[ffaCurrentWeapon]||{mag:30,reserve:90};ammoEl.textContent=ffaCurrentWeapon==='portal'?'PORTALS':(ffaReloading?'RELOADING...':a.mag+' / '+a.reserve);}
+            const pet=FFA_PETS.find(x=>x.id===ffaEquippedPet);
+            document.getElementById('ffa-pet-label').textContent=pet?'🐾 '+pet.name:'No Cabagling equipped';
+            document.getElementById('ffa-pet-name').textContent=pet?pet.name.toUpperCase():'NONE EQUIPPED';
+            document.getElementById('ffa-pet-status').textContent=pet?'FOLLOWING YOU INTO BATTLE':'Visit the armoury to adopt one';
+            document.getElementById('ffa-pet-avatar').textContent=pet?({sprouty:'🥬',medic:'💚',coinling:'🪙',chomper:'😈'}[pet.id]||'🥬'):'🥬';
+            const roster=document.getElementById('cabagling-owned-strip');
+            roster.innerHTML=ffaOwnedPets.length?ffaOwnedPets.map(id=>{const p=FFA_PETS.find(x=>x.id===id);return p?`<span class="cabagling-chip">${({sprouty:'🥬',medic:'💚',coinling:'🪙',chomper:'😈'}[id]||'🥬')} ${p.name}</span>`:'';}).join(''):'<span class="text-[9px] text-slate-500">No recruits yet</span>';
+            ffaWalletUpdate();
+        }
+
+        function ffaMakeTiledTexture(base, flecks, size=512, density=1800) {
+            const canvas=document.createElement('canvas');canvas.width=canvas.height=size;
+            const ctx=canvas.getContext('2d');ctx.fillStyle=base;ctx.fillRect(0,0,size,size);
+            for(let i=0;i<density;i++){
+                const c=flecks[Math.floor(Math.random()*flecks.length)];ctx.fillStyle=c;
+                const x=Math.random()*size,y=Math.random()*size;
+                const w=1+Math.random()*4,h=1+Math.random()*3;
+                ctx.globalAlpha=.18+Math.random()*.34;ctx.fillRect(x,y,w,h);
+            }
+            ctx.globalAlpha=1;
+            const tex=new THREE.CanvasTexture(canvas);tex.wrapS=tex.wrapT=THREE.RepeatWrapping;
+            tex.anisotropy=Math.min(8,renderer.capabilities.getMaxAnisotropy());return tex;
+        }
+        function ffaMakeArenaTextures() {
+            if(ffaGroundTexture)return;
+            ffaGroundTexture=ffaMakeTiledTexture('#426b35',['#253f23','#6d8740','#8b9850','#314e2a','#b1a36b'],512,4200);
+            ffaDirtTexture=ffaMakeTiledTexture('#64452d',['#36291f','#8a6240','#a17a50','#4d3829'],256,1700);
+            ffaWoodTexture=ffaMakeTiledTexture('#76502e',['#3f2c1e','#a77a4b','#bd915d'],256,1100);
+            ffaFabricTexture=ffaMakeTiledTexture('#a5a5a5',['#5f5f5f','#e5e5e5','#7d7d7d'],256,800);
+        }
+        function ffaAddCollider(x,z,halfX,halfZ,height=3,minY=0,canStand=true) {
+            ffaColliders.push({x,z,halfX,halfZ,height,minY,canStand});
+        }
+        let ffaFieldCoreGeometry=null,ffaFieldLeafGeometry=null,ffaFieldCoreMaterial=null,ffaFieldLeafMaterial=null;
+        function ffaCreateFieldCabbage() {
+            if(!ffaFieldCoreGeometry){
+                ffaFieldCoreGeometry=new THREE.SphereGeometry(.27,12,10);
+                ffaFieldLeafGeometry=new THREE.SphereGeometry(.2,9,8);
+                ffaFieldCoreMaterial=new THREE.MeshStandardMaterial({color:0x81b65b,roughness:.9});
+                ffaFieldLeafMaterial=new THREE.MeshStandardMaterial({color:0x477c32,roughness:.95});
+            }
+            const group=new THREE.Group();group.add(new THREE.Mesh(ffaFieldCoreGeometry,ffaFieldCoreMaterial));
+            for(let i=0;i<6;i++){
+                const leaf=new THREE.Mesh(ffaFieldLeafGeometry,ffaFieldLeafMaterial);
+                const a=(Math.PI*2*i)/6;leaf.position.set(Math.cos(a)*.15,-.015,Math.sin(a)*.15);leaf.scale.set(1.15,.72,1.3);leaf.rotation.y=a;leaf.castShadow=true;group.add(leaf);
+            }
+            return group;
+        }
+        function ffaBuildTree(x,z,scale=1) {
+            const tree=new THREE.Group();
+            const bark=new THREE.MeshStandardMaterial({color:0x69432a,map:ffaWoodTexture,roughness:1});
+            const leaves=[0x315c2d,0x3f7134,0x557d3b].map(color=>new THREE.MeshStandardMaterial({color,roughness:.96}));
+            const trunk=new THREE.Mesh(new THREE.CylinderGeometry(.34*scale,.52*scale,4.3*scale,10),bark);trunk.position.y=2.15*scale;trunk.castShadow=true;trunk.receiveShadow=true;tree.add(trunk);
+            for(let i=0;i<7;i++){
+                const crown=new THREE.Mesh(new THREE.IcosahedronGeometry((1.35+Math.random()*.35)*scale,1),leaves[i%leaves.length]);
+                crown.position.set((Math.random()-.5)*1.9*scale,(3.8+Math.random()*1.7)*scale,(Math.random()-.5)*1.9*scale);crown.castShadow=true;crown.receiveShadow=true;tree.add(crown);
+            }
+            tree.position.set(x,0,z);ffaArena.add(tree);ffaAddCollider(x,z,.78*scale,.78*scale,4.7*scale,0,false);
+        }
+        function ffaBuildArena() {
+            if (ffaArena) return;
+            ffaMakeArenaTextures();
+            ffaColliders=[];
+            ffaArena = new THREE.Group();scene.add(ffaArena);
+
+            const groundMat=new THREE.MeshStandardMaterial({map:ffaGroundTexture,roughness:1,color:0xe5f0da});
+            groundMat.map.repeat.set(46,46);
+            const ground=new THREE.Mesh(new THREE.PlaneGeometry(ffaArenaSize,ffaArenaSize),groundMat);
+            ground.rotation.x=-Math.PI/2;ground.position.y=-.08;ground.receiveShadow=true;ffaArena.add(ground);
+
+            const dirtMat=new THREE.MeshStandardMaterial({map:ffaDirtTexture,roughness:1});dirtMat.map.repeat.set(20,5);
+            const dirt=new THREE.Mesh(new THREE.BoxGeometry(ffaArenaSize+2,1.7,ffaArenaSize+2),dirtMat);
+            dirt.position.y=-.96;dirt.receiveShadow=true;ffaArena.add(dirt);
+
+            // Tall hedgerows mark the edge of the floating cabbage field.
+            const hedgeMat=new THREE.MeshStandardMaterial({color:0x315b2d,roughness:1});
+            const hedgeTop=new THREE.MeshStandardMaterial({color:0x527c3b,roughness:1});
+            function wall(x,z,w,d){const m=new THREE.Mesh(new THREE.BoxGeometry(w,4,d),[hedgeMat,hedgeMat,hedgeTop,hedgeMat,hedgeMat,hedgeMat]);m.position.set(x,1.4,z);m.castShadow=true;m.receiveShadow=true;ffaArena.add(m);}
+            wall(0,-ffaArenaHalf,ffaArenaSize,1.6);wall(0,ffaArenaHalf,ffaArenaSize,1.6);
+            wall(-ffaArenaHalf,0,1.6,ffaArenaSize);wall(ffaArenaHalf,0,1.6,ffaArenaSize);
+
+            // Low wooden fencing, gates and weathered field posts.
+            const wood=new THREE.MeshStandardMaterial({color:0x8b6039,map:ffaWoodTexture,roughness:.95});
+            const postGeo=new THREE.BoxGeometry(.24,1.35,.24),railGeo=new THREE.BoxGeometry(ffaArenaSize-10,.16,.18);
+            for(const z of [-ffaArenaHalf+5,ffaArenaHalf-5]){
+                for(let x=-ffaArenaHalf+5;x<=ffaArenaHalf-5;x+=9){const post=new THREE.Mesh(postGeo,wood);post.position.set(x,.65,z);post.castShadow=true;ffaArena.add(post);}
+                const rail=new THREE.Mesh(railGeo,wood);rail.position.set(0,.55,z);rail.castShadow=true;ffaArena.add(rail);
+                ffaAddCollider(0,z,ffaArenaHalf-5,.22,1.0,0,true);
+            }
+            for(const x of [-ffaArenaHalf+5,ffaArenaHalf-5]){
+                for(let z=-ffaArenaHalf+5;z<=ffaArenaHalf-5;z+=9){const post=new THREE.Mesh(postGeo,wood);post.position.set(x,.65,z);post.castShadow=true;ffaArena.add(post);}
+                const rail=new THREE.Mesh(new THREE.BoxGeometry(.18,.16,ffaArenaSize-10),wood);rail.position.set(x,.55,0);rail.castShadow=true;ffaArena.add(rail);
+                ffaAddCollider(x,0,.22,ffaArenaHalf-5,1.0,0,true);
+            }
+
+            // Central farmhouse / shed, with roof, doorway and windows.
+            const shed=new THREE.Group();
+            const shedWall=new THREE.MeshStandardMaterial({color:0x987044,map:ffaWoodTexture,roughness:1});
+            const shedRoof=new THREE.MeshStandardMaterial({color:0x493d31,roughness:.94});
+            const shell=new THREE.Mesh(new THREE.BoxGeometry(11,4.8,8),shedWall);shell.position.y=2.4;shell.castShadow=true;shell.receiveShadow=true;shed.add(shell);
+            const roof=new THREE.Mesh(new THREE.ConeGeometry(8.2,3.3,4),shedRoof);roof.position.y=6.2;roof.rotation.y=Math.PI/4;roof.castShadow=true;shed.add(roof);
+            const door=new THREE.Mesh(new THREE.BoxGeometry(2.2,3.2,.15),new THREE.MeshStandardMaterial({color:0x38281c,map:ffaWoodTexture}));door.position.set(0,1.6,4.08);shed.add(door);
+            const winMat=new THREE.MeshStandardMaterial({color:0x9fd3d9,metalness:.25,roughness:.2,emissive:0x23404a,emissiveIntensity:.25});
+            for(const x of [-3.2,3.2]){const win=new THREE.Mesh(new THREE.BoxGeometry(1.5,1.15,.14),winMat);win.position.set(x,2.9,4.1);shed.add(win);}
+            shed.position.set(-38,0,-35);ffaArena.add(shed);ffaAddCollider(-38,-35,5.8,4.4,5.2,0,false);
+
+            // Hay bales, crates and rocks make usable cover.
+            const hayMat=new THREE.MeshStandardMaterial({color:0xb79a50,roughness:1});
+            const hayPositions=[[-18,-22],[18,-22],[-20,21],[21,19],[39,8],[-40,12],[6,35]];
+            hayPositions.forEach(([x,z])=>{
+                const bale=new THREE.Mesh(new THREE.CylinderGeometry(.82,.82,1.25,16),hayMat);bale.rotation.z=Math.PI/2;bale.position.set(x,.8,z);bale.castShadow=true;bale.receiveShadow=true;ffaArena.add(bale);
+                const band=new THREE.Mesh(new THREE.TorusGeometry(.81,.035,6,20),wood);band.rotation.y=Math.PI/2;band.position.set(x,.8,z);ffaArena.add(band);ffaAddCollider(x,z,.82,.82,1.6);
+            });
+            const crateMat=new THREE.MeshStandardMaterial({color:0x987044,map:ffaWoodTexture,roughness:.95});
+            const crateSpots=[[-12,-8],[12,-8],[-14,12],[14,12],[0,-27],[0,27],[31,-18],[-31,18],[34,31]];
+            crateSpots.forEach(([x,z],i)=>{
+                const h=i%3===0?2.0:1.55;
+                const crate=new THREE.Mesh(new THREE.BoxGeometry(2.5,h,2.5),crateMat);crate.position.set(x,h/2,z);crate.castShadow=true;crate.receiveShadow=true;ffaArena.add(crate);
+                const band=new THREE.Mesh(new THREE.BoxGeometry(2.55,.11,.11),new THREE.MeshStandardMaterial({color:0xd1ae70,roughness:.8}));band.position.set(x,h*.65,z-1.26);ffaArena.add(band);
+                ffaAddCollider(x,z,1.3,1.3,h);
+            });
+            const rockMat=new THREE.MeshStandardMaterial({color:0x77796f,roughness:1});
+            const rockSpots=[[-29,-4],[29,3],[-8,39],[9,-41],[43,-34],[-44,35],[43,42],[-45,-43],[27,37],[-31,-36],[4,17],[2,-16]];
+            rockSpots.forEach(([x,z],i)=>{
+                const scale=.8+(i%3)*.22;const rock=new THREE.Mesh(new THREE.DodecahedronGeometry(1.05*scale,1),rockMat);rock.scale.set(1.15,.72,.9);rock.position.set(x,.52*scale,z);rock.rotation.set(Math.random(),Math.random(),Math.random());rock.castShadow=true;rock.receiveShadow=true;ffaArena.add(rock);ffaAddCollider(x,z,.95*scale,.9*scale,1.25*scale);
+            });
+
+            // Trees placed around the outer field and the orchard lanes.
+            [[-49,-44],[-49,0],[-49,45],[49,-45],[49,0],[49,45],[-26,48],[25,-49],[-3,-49],[5,48],[-50,24],[50,-23]].forEach((pt,i)=>ffaBuildTree(pt[0],pt[1],.9+(i%3)*.12));
+
+            // Rows of small cabbages and low leafy plants fill the open field.
+            const cropMat=new THREE.MeshStandardMaterial({color:0x6e9b3d,roughness:1});
+            for(let row=-3;row<=3;row++){
+                for(let col=-4;col<=4;col++){
+                    const x=col*7+(row%2)*1.4,z=row*8-2;
+                    if(Math.abs(x)<9&&Math.abs(z)<11)continue;
+                    const c=ffaCreateFieldCabbage();c.scale.setScalar(.62+Math.random()*.22);c.position.set(x,.24,z);c.rotation.y=Math.random()*Math.PI*2;ffaArena.add(c);
+                }
+            }
+            for(let i=0;i<75;i++){
+                const x=(Math.random()-.5)*(ffaArenaSize-16),z=(Math.random()-.5)*(ffaArenaSize-16);
+                if(Math.abs(x)<10&&Math.abs(z)<12)continue;
+                const tuft=new THREE.Mesh(new THREE.IcosahedronGeometry(.18+Math.random()*.16,0),cropMat);tuft.position.set(x,.12,z);tuft.scale.y=.45;tuft.castShadow=true;ffaArena.add(tuft);
+            }
+
+            // Entry sign and a few lamps for scale and atmosphere.
+            const sign=new THREE.Group();const postMat=new THREE.MeshStandardMaterial({color:0x704421,map:ffaWoodTexture});
+            const post=new THREE.Mesh(new THREE.BoxGeometry(.38,4,.38),postMat);post.position.y=2;sign.add(post);
+            const board=new THREE.Mesh(new THREE.BoxGeometry(7,1.8,.28),new THREE.MeshStandardMaterial({color:0x4b2e1b,map:ffaWoodTexture}));board.position.set(0,3.2,0);sign.add(board);
+            const signText=new THREE.Mesh(new THREE.BoxGeometry(5.7,.08,.32),new THREE.MeshStandardMaterial({color:0xbce879,emissive:0x263d13}));signText.position.set(0,3.2,.2);sign.add(signText);
+            sign.position.set(0,0,-ffaArenaHalf+4);ffaArena.add(sign);
+        }
+        function ffaMakeBot(name,color) {
+            const g=new THREE.Group();
+            const fabric=new THREE.MeshStandardMaterial({color,map:ffaFabricTexture,roughness:.94});
+            const armor=new THREE.MeshStandardMaterial({color:new THREE.Color(color).multiplyScalar(.72),roughness:.72,metalness:.18});
+            const trim=new THREE.MeshStandardMaterial({color:0xb4a477,roughness:.58,metalness:.38});
+            const dark=new THREE.MeshStandardMaterial({color:0x20272b,roughness:.83});
+            const skin=new THREE.MeshStandardMaterial({color:0xc58f70,roughness:.92});
+            const visor=new THREE.MeshStandardMaterial({color:0x172c36,metalness:.55,roughness:.22,emissive:0x0d3440,emissiveIntensity:.28});
+            const glow=new THREE.MeshStandardMaterial({color:0x9de6a3,emissive:0x356b3a,emissiveIntensity:.6,roughness:.35});
+            const sphere=(parent,geo,mat,pos,scale)=>{const m=new THREE.Mesh(geo,mat);m.position.set(...pos);m.scale.set(...scale);m.castShadow=true;m.receiveShadow=true;parent.add(m);return m;};
+            const box=(parent,geo,mat,pos,rot=0)=>{const m=new THREE.Mesh(geo,mat);m.position.set(...pos);m.rotation.z=rot;m.castShadow=true;m.receiveShadow=true;parent.add(m);return m;};
+
+            // Boots, trousers and a properly proportioned pelvis.
+            box(g,new THREE.BoxGeometry(.68,.34,.42),dark,[0,.91,0]);
+            const legPivots=[];
+            for(const side of [-1,1]){
+                const leg=new THREE.Group();leg.position.set(side*.22,.82,0);g.add(leg);legPivots.push(leg);
+                const thigh=box(leg,new THREE.CylinderGeometry(.16,.19,.48,12),fabric,[0,-.25,0]);
+                sphere(leg,new THREE.SphereGeometry(.17,12,10),armor,[0,-.5,0],[1,1,1]);
+                box(leg,new THREE.CylinderGeometry(.12,.15,.42,12),dark,[0,-.72,0]);
+                box(leg,new THREE.BoxGeometry(.3,.16,.48),dark,[0,-.97,.09]);
+                box(leg,new THREE.BoxGeometry(.32,.1,.49),trim,[0,-1.04,.09]);
+                box(leg,new THREE.BoxGeometry(.32,.11,.08),armor,[0,-.79,.19]);
+            }
+
+            // Torso, plate carrier, equipment straps and chest badge.
+            const torso=new THREE.Group();torso.position.set(0,1.36,0);g.add(torso);
+            box(torso,new THREE.BoxGeometry(.8,.78,.43),fabric,[0,0,0]);
+            sphere(torso,new THREE.SphereGeometry(.28,14,12),armor,[0,.31,0],[1.35,.75,.9]);
+            box(torso,new THREE.BoxGeometry(.72,.54,.16),armor,[0,.02,.25]);
+            box(torso,new THREE.BoxGeometry(.12,.61,.055),trim,[0,.03,.34]);
+            for(const x of [-.23,.23]){
+                box(torso,new THREE.BoxGeometry(.2,.22,.1),dark,[x,-.12,.35]);
+                box(torso,new THREE.BoxGeometry(.16,.13,.07),trim,[x,-.1,.41]);
+            }
+            sphere(torso,new THREE.SphereGeometry(.085,12,10),glow,[0,.12,.355],[1,1,.25]);
+            box(torso,new THREE.BoxGeometry(.82,.2,.48),armor,[0,-.4,0]);
+            // Backpack and radio antenna.
+            box(g,new THREE.BoxGeometry(.62,.68,.28),dark,[0,1.39,-.32]);
+            box(g,new THREE.BoxGeometry(.48,.38,.08),armor,[0,1.42,-.49]);
+            const antenna=new THREE.Mesh(new THREE.CylinderGeometry(.018,.025,.48,7),trim);antenna.position.set(.22,1.88,-.42);antenna.rotation.z=-.12;g.add(antenna);
+
+            // Neck and head with padded helmet, visor and side comms.
+            const neck=new THREE.Mesh(new THREE.CylinderGeometry(.13,.15,.2,12),skin);neck.position.y=1.88;g.add(neck);
+            sphere(g,new THREE.SphereGeometry(.29,18,14),skin,[0,2.14,.02],[.9,1.12,.86]);
+            sphere(g,new THREE.SphereGeometry(.34,18,12),armor,[0,2.34,-.01],[1.12,.73,1.05]);
+            sphere(g,new THREE.SphereGeometry(.235,16,10),visor,[0,2.18,.265],[1.12,.42,.2]);
+            for(const side of [-1,1]){
+                sphere(g,new THREE.SphereGeometry(.095,12,10),dark,[side*.31,2.23,0],[.65,1.15,.8]);
+                sphere(g,new THREE.SphereGeometry(.065,10,8),glow,[side*.31,2.23,.07],[.5,.5,.35]);
+            }
+            // Cabbage-leaf crest makes the soldiers recognisably CabbageMuncher.
+            const leafMat=new THREE.MeshStandardMaterial({color:0x6b9b43,roughness:.9});
+            for(let i=0;i<3;i++){
+                const leaf=new THREE.Mesh(new THREE.SphereGeometry(.13,10,8),leafMat);leaf.scale.set(.48,1.65,.25);leaf.position.set((i-1)*.12,2.62,.02);leaf.rotation.z=(i-1)*-.28;leaf.castShadow=true;g.add(leaf);
+            }
+
+            // Shoulder guards, articulated arms and gloves.
+            const armPivots=[];
+            for(const side of [-1,1]){
+                const arm=new THREE.Group();arm.position.set(side*.49,1.66,0);g.add(arm);armPivots.push(arm);
+                sphere(arm,new THREE.SphereGeometry(.22,12,10),armor,[side*.02,-.03,0],[1.15,.9,1]);
+                const upper=new THREE.Mesh(new THREE.CylinderGeometry(.13,.155,.43,12),fabric);upper.position.set(side*.035,-.29,.01);upper.rotation.z=-side*.08;upper.castShadow=true;arm.add(upper);
+                sphere(arm,new THREE.SphereGeometry(.14,12,10),armor,[side*.05,-.52,.025],[1,1,1]);
+                const forearm=new THREE.Mesh(new THREE.CylinderGeometry(.105,.14,.4,12),armor);forearm.position.set(side*.07,-.75,.045);forearm.rotation.z=-side*.05;forearm.castShadow=true;arm.add(forearm);
+                box(arm,new THREE.BoxGeometry(.25,.12,.23),dark,[side*.07,-.99,.12]);
+                box(arm,new THREE.BoxGeometry(.27,.07,.24),trim,[side*.07,-.94,.13]);
+            }
+            // A compact field rifle sits across the chest, with a barrel, sight and magazine.
+            box(g,new THREE.BoxGeometry(.18,.2,.52),dark,[.28,1.32,.28],-.12);
+            const botBarrel=new THREE.Mesh(new THREE.CylinderGeometry(.045,.055,.62,10),trim);botBarrel.rotation.x=Math.PI/2;botBarrel.position.set(.28,1.35,.78);botBarrel.castShadow=true;g.add(botBarrel);
+            box(g,new THREE.BoxGeometry(.11,.24,.16),armor,[.28,1.17,.35],.08);
+            box(g,new THREE.BoxGeometry(.1,.1,.13),glow,[.28,1.48,.42]);
+
+            g.position.copy(ffaFindSpawnPoint(3));ffaArena.add(g);
+            return {group:g,name,health:100,maxHealth:100,alive:true,respawnAt:0,shootTimer:1+Math.random()*2,phase:Math.random()*6.28,stun:0,legPivots,armPivots};
+        }
+        function ffaFindSpawnPoint(clearance=2) {
+            for(let tries=0;tries<100;tries++){
+                const x=(Math.random()-.5)*(ffaArenaSize-22),z=(Math.random()-.5)*(ffaArenaSize-22);
+                if(Math.hypot(x-camera.position.x,z-camera.position.z)<13)continue;
+                if(!ffaIsBlocked(x,z,clearance,0,true))return new THREE.Vector3(x,0,z);
+            }
+            return new THREE.Vector3(0,0,0);
+        }
+        function ffaCircleHitsBox(x,z,r,c) {
+            const nearestX=THREE.MathUtils.clamp(x,c.x-c.halfX,c.x+c.halfX);
+            const nearestZ=THREE.MathUtils.clamp(z,c.z-c.halfZ,c.z+c.halfZ);
+            const dx=x-nearestX,dz=z-nearestZ;
+            return dx*dx+dz*dz<r*r;
+        }
+        function ffaIsBlocked(x,z,r=FFA_PLAYER_RADIUS,feet=0,includeBots=false,ignoreBot=null) {
+            if(x < -ffaArenaHalf+1.6+r || x > ffaArenaHalf-1.6-r || z < -ffaArenaHalf+1.6+r || z > ffaArenaHalf-1.6-r)return true;
+            const head=feet+PLAYER_HEIGHT;
+            for(const c of ffaColliders){if(feet<c.height && head>c.minY && ffaCircleHitsBox(x,z,r,c))return true;}
+            if(includeBots){
+                for(const b of ffaBots){if(!b.alive||b===ignoreBot)continue;const dx=x-b.group.position.x,dz=z-b.group.position.z;if(dx*dx+dz*dz<(r+.52)*(r+.52))return true;}
+            }
+            return false;
+        }
+        function ffaIsShotBlocked(pos) {
+            for(const c of ffaColliders){if(pos.y<c.height && pos.y>c.minY && ffaCircleHitsBox(pos.x,pos.z,.12,c))return true;}
+            return Math.abs(pos.x)>ffaArenaHalf || Math.abs(pos.z)>ffaArenaHalf;
+        }
+        function ffaGetSupportHeight(x,z,r=FFA_PLAYER_RADIUS) {
+            let height=0;
+            for(const c of ffaColliders){if(c.canStand&&ffaCircleHitsBox(x,z,r,c))height=Math.max(height,c.height);}
+            return height;
+        }
+        function ffaResetBots(count) {
+            ffaBots.forEach(b=>ffaArena.remove(b.group));
+            ffaBots=[];
+            const names=['Sir Sprout','Leaf Erikson','Count Cabbagula','Brussel Beef','The Big Lettuce','Professor Pea','Duke of Dirt','Bean Solo'];
+            const colors=[0xd97757,0x647bd6,0xd8aa42,0x9a63bb,0x4e9b8b,0xc05d8b,0x777777,0x719b4b];
+            for(let i=0;i<count;i++) ffaBots.push(ffaMakeBot(names[i%names.length],colors[i%colors.length]));
+        }
+        function ffaClearShots() {
+            ffaShots.forEach(s=>scene.remove(s.mesh)); ffaShots=[];
+        }
+        function ffaMakeWeaponView() {
+            if(ffaWeaponView) camera.remove(ffaWeaponView);
+            ffaWeaponView=new THREE.Group();
+            const spec=FFA_WEAPONS.find(w=>w.id===ffaCurrentWeapon)||FFA_WEAPONS[0];
+            const bodyMat=new THREE.MeshStandardMaterial({color:spec.color,metalness:.32,roughness:.38});
+            const dark=new THREE.MeshStandardMaterial({color:0x263238,metalness:.4,roughness:.38});
+            const chosenSkin=FFA_SKINS.find(x=>x.id===ffaEquippedSkin)||FFA_SKINS[0];
+            const sleeveMat=new THREE.MeshStandardMaterial({color:chosenSkin.color,map:ffaFabricTexture,roughness:.9});
+            const gloveMat=new THREE.MeshStandardMaterial({color:0x24282a,roughness:.88});
+            const arm=new THREE.Mesh(new THREE.CylinderGeometry(.105,.14,.48,12),sleeveMat);arm.rotation.x=-.42;arm.rotation.z=-.25;arm.position.set(.34,-.22,-.17);ffaWeaponView.add(arm);
+            const glove=new THREE.Mesh(new THREE.SphereGeometry(.13,12,10),gloveMat);glove.scale.set(1,.7,1.15);glove.position.set(.3,-.14,-.38);ffaWeaponView.add(glove);
+            const body=new THREE.Mesh(new THREE.BoxGeometry(.24,.22,.58),bodyMat);body.position.set(0,0,0);body.castShadow=true;ffaWeaponView.add(body);
+            const topRail=new THREE.Mesh(new THREE.BoxGeometry(.09,.055,.42),dark);topRail.position.set(0,.13,-.04);ffaWeaponView.add(topRail);
+            const sight=new THREE.Mesh(new THREE.BoxGeometry(.07,.12,.07),dark);sight.position.set(0,.21,-.12);ffaWeaponView.add(sight);
+            const barrel=new THREE.Mesh(new THREE.CylinderGeometry(.055,.07,.42,10),dark);barrel.rotation.x=Math.PI/2;barrel.position.set(0,.015,-.42);ffaWeaponView.add(barrel);
+            const grip=new THREE.Mesh(new THREE.BoxGeometry(.11,.24,.14),dark);grip.position.set(0,-.17,.12);grip.rotation.x=-.2;ffaWeaponView.add(grip);
+            if(ffaCurrentWeapon==='portal'){
+                const ring=new THREE.Mesh(new THREE.TorusGeometry(.16,.045,8,20),new THREE.MeshStandardMaterial({color:0xc084fc,emissive:0x6b21a8,emissiveIntensity:1.4}));ring.position.set(0,.02,-.5);ffaWeaponView.add(ring);
+            }
+            ffaWeaponView.position.set(.34,-.28,-.55);camera.add(ffaWeaponView);
+        }
+        function ffaSetWeapon(id) {
+            if(!ffaOwnedWeapons.includes(id)){ ffaToast('You have not bought that weapon!',false);return; }
+            ffaCurrentWeapon=id; ffaMakeWeaponView(); ffaUpdateHUD(); ffaSave();
+        }
+        function ffaMakeVehicle() {
+            if(ffaVehicle) return;
+            ffaVehicle=new THREE.Group();
+            const green=new THREE.MeshStandardMaterial({color:0x5b8e38,roughness:.6,metalness:.15});
+            const dark=new THREE.MeshStandardMaterial({color:0x20252a,roughness:.8});
+            const chassis=new THREE.Mesh(new THREE.BoxGeometry(1.65,.42,2.3),green);chassis.position.y=.48;ffaVehicle.add(chassis);
+            const nose=new THREE.Mesh(new THREE.BoxGeometry(1.25,.3,.65),new THREE.MeshStandardMaterial({color:0x9fc65b}));nose.position.set(0,.72,-.9);ffaVehicle.add(nose);
+            const seat=new THREE.Mesh(new THREE.BoxGeometry(.8,.7,.75),dark);seat.position.set(0,.86,.25);ffaVehicle.add(seat);
+            for(const x of [-.86,.86]) for(const z of [-.72,.72]) {const wheel=new THREE.Mesh(new THREE.CylinderGeometry(.34,.34,.22,12),dark);wheel.rotation.z=Math.PI/2;wheel.position.set(x,.34,z);ffaVehicle.add(wheel);}
+            const gun=new THREE.Mesh(new THREE.CylinderGeometry(.08,.13,1.1,8),new THREE.MeshStandardMaterial({color:0x6b7280}));gun.rotation.x=Math.PI/2;gun.position.set(0,1.0,-.75);ffaVehicle.add(gun);
+            ffaArena.add(ffaVehicle); ffaVehicle.visible=false;
+        }
+        function ffaClearPortal(which) {
+            const key=which===0?'A':'B';
+            const old=which===0?ffaPortalA:ffaPortalB;
+            if(old) ffaArena.remove(old);
+            const group=new THREE.Group();
+            const ring=new THREE.Mesh(new THREE.TorusGeometry(.9,.14,10,36),new THREE.MeshStandardMaterial({color:which===0?0x22d3ee:0xf472b6,emissive:which===0?0x0891b2:0xbe185d,emissiveIntensity:1.5,metalness:.25,roughness:.3}));
+            group.add(ring);
+            const inner=new THREE.Mesh(new THREE.CircleGeometry(.78,32),new THREE.MeshBasicMaterial({color:which===0?0x0e7490:0x9d174d,transparent:true,opacity:.55,side:THREE.DoubleSide}));group.add(inner);
+            const dir=new THREE.Vector3();camera.getWorldDirection(dir);dir.y=0;dir.normalize();
+            const pos=camera.position.clone().add(dir.multiplyScalar(4.5));pos.y=1.15;pos.x=THREE.MathUtils.clamp(pos.x,-ffaArenaHalf+4,ffaArenaHalf-4);pos.z=THREE.MathUtils.clamp(pos.z,-ffaArenaHalf+4,ffaArenaHalf-4);
+            group.position.copy(pos);group.rotation.y=Math.atan2(-dir.x,-dir.z);ffaArena.add(group);
+            if(which===0) ffaPortalA=group; else ffaPortalB=group;
+            ffaToast('Portal '+key+' placed!');
+        }
+        function placeFFAPortal(which) {
+            if(!ffaActive || ffaCurrentWeapon!=='portal') return;
+            ffaClearPortal(which);
+        }
+        function ffaPlayShotSound() {
+            if(!gameState.soundEnabled) return;
+            try { const AC=window.AudioContext||window.webkitAudioContext; if(!window.ffaAudio) window.ffaAudio=new AC(); const c=window.ffaAudio; if(c.state==='suspended')c.resume(); const o=c.createOscillator(),g=c.createGain();o.type='square';o.frequency.setValueAtTime(260+Math.random()*170,c.currentTime);o.frequency.exponentialRampToValueAtTime(70,c.currentTime+.09);g.gain.setValueAtTime(.055,c.currentTime);g.gain.exponentialRampToValueAtTime(.001,c.currentTime+.1);o.connect(g);g.connect(c.destination);o.start();o.stop(c.currentTime+.11); } catch(_e){}
+        }
+        function ffaSpawnShot(origin, direction, owner, damage, color, speed=38, scale=.13) {
+            const dir=direction.clone().normalize();
+            const laser=owner==='player';
+            const mesh=new THREE.Mesh(laser?new THREE.CylinderGeometry(.025,.055,1.65,7):new THREE.SphereGeometry(scale,10,8),new THREE.MeshBasicMaterial({color:laser?0x54ff65:color}));
+            if(laser){mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),dir);mesh.position.copy(origin).addScaledVector(dir,.8);}
+            else mesh.position.copy(origin);
+            scene.add(mesh);
+            ffaShots.push({mesh,velocity:dir.multiplyScalar(speed),owner,damage,life:laser?.72:2.3});
+        }
+        function ffaReload(){
+            if(!ffaActive||ffaReloading||ffaCurrentWeapon==='portal')return;
+            const a=ffaAmmo[ffaCurrentWeapon]||(ffaAmmo[ffaCurrentWeapon]={mag:30,reserve:90});
+            const cap=ffaCurrentWeapon==='sniper'?5:ffaCurrentWeapon==='cauli'?4:ffaCurrentWeapon==='brussels'?24:ffaCurrentWeapon==='leafblower'?36:30;
+            if(a.mag>=cap||a.reserve<=0){ffaToast(a.reserve<=0?'NO SPARE AMMO! FIND SOME.':'MAGAZINE ALREADY FULL.',false);return;}
+            ffaReloading=true;ffaReloadTimer=1.15;
+            ffaToast('RELOADING...');
+            if(ffaWeaponView){ffaWeaponView.userData.reloadStart=performance.now();}
+            ffaUpdateHUD();
+        }
+        function ffaPickupAtPlayer(){
+            if(!ffaActive)return;
+            for(let i=ffaPickups.length-1;i>=0;i--){const p=ffaPickups[i];if(p.group.position.distanceTo(camera.position)>2.15)continue;
+                if(p.kind==='weapon'){
+                    if(!ffaOwnedWeapons.includes(p.weapon)){ffaOwnedWeapons.push(p.weapon);ffaAmmo[p.weapon]={mag:30,reserve:60};ffaSetWeapon(p.weapon);ffaToast('WEAPON FOUND: '+(FFA_WEAPONS.find(w=>w.id===p.weapon)?.name||p.weapon));}
+                    else {const a=ffaAmmo[p.weapon]||(ffaAmmo[p.weapon]={mag:0,reserve:0});a.reserve+=45;ffaToast('+45 '+p.weapon.toUpperCase()+' AMMO');}
+                }else{const a=ffaAmmo[ffaCurrentWeapon]||(ffaAmmo[ffaCurrentWeapon]={mag:30,reserve:90});a.reserve+=p.amount;ffaToast('AMMO PICKED UP +'+p.amount);}
+                ffaArena.remove(p.group);ffaPickups.splice(i,1);ffaUpdateHUD();
+            }
+        }
+        function horrorSpawnPickups(){
+            ffaPickups.forEach(p=>ffaArena.remove(p.group));ffaPickups=[];
+            const choices=['leafblower','cauli','brussels','sniper'];
+            for(let i=0;i<9;i++){
+                const kind=i<4?'weapon':'ammo';const weapon=choices[i%choices.length];
+                const g=new THREE.Group();
+                const c=new THREE.Mesh(new THREE.BoxGeometry(.62,.22,.38),new THREE.MeshStandardMaterial({color:kind==='weapon'?0x477d38:0x4ade80,emissive:kind==='weapon'?0x183b16:0x14532d,emissiveIntensity:.45,metalness:.25,roughness:.4}));c.position.y=.48;g.add(c);
+                const glow=new THREE.Mesh(new THREE.TorusGeometry(.42,.035,6,18),new THREE.MeshBasicMaterial({color:0x65ff79}));glow.rotation.x=Math.PI/2;glow.position.y=.18;g.add(glow);
+                g.position.set((Math.random()-.5)*(ffaArenaHalf*1.45),0,(Math.random()-.5)*(ffaArenaHalf*1.45));ffaArena.add(g);
+                ffaPickups.push({group:g,kind,weapon,amount:kind==='ammo'?45:0,phase:Math.random()*6});
+            }
+        }
+        function fireFFAWeapon() {
+            if(!ffaActive || !isPointerLocked || ffaShopOpen || pauseOpen || ffaCurrentWeapon==='portal' || ffaReloading || (ffaOnline && netDead)) return;
+            const spec=FFA_WEAPONS.find(w=>w.id===ffaCurrentWeapon)||FFA_WEAPONS[0];
+            const now=performance.now()/1000;
+            if(now-ffaLastShot<spec.rate)return;
+            const ammo=ffaAmmo[ffaCurrentWeapon]||(ffaAmmo[ffaCurrentWeapon]={mag:30,reserve:90});
+            if(ammo.mag<=0){ffaToast('CLICK! PRESS R TO RELOAD.',false);return;}
+            ammo.mag--;ffaLastShot=now;ffaUpdateHUD();ffaRecoil=Math.min(.12,ffaRecoil+.075);
+            const dir=new THREE.Vector3();camera.getWorldDirection(dir);
+            const origin=camera.position.clone().add(dir.clone().multiplyScalar(.8));
+            if(ffaCurrentWeapon==='brussels'){
+                for(let i=-1;i<=1;i++){const spread=dir.clone().add(new THREE.Vector3(i*.035,0,0)).normalize();ffaSpawnShot(origin,spread,'player',spec.damage,spec.color,185,.105);}
+            } else ffaSpawnShot(origin,dir,'player',spec.damage,spec.color,185,ffaCurrentWeapon==='cauli'?.22:.12);
+            netFire(ffaCurrentWeapon,origin,dir);
+            ffaPlayShotSound();
+        }
+        function ffaDamageBot(bot,damage) {
+            if(!bot.alive)return;
+            bot.health-=damage;
+            bot.group.scale.set(1.08,0.92,1.08);
+            setTimeout(()=>{if(bot.group && bot.alive)bot.group.scale.set(1,1,1);},90);
+            if(bot.health<=0){
+                bot.health=0;bot.alive=false;bot.group.visible=false;bot.respawnAt=performance.now()+2800;
+                ffaKills++;gameState.wallet+=60;
+                if(ffaEquippedPet==='coinling')gameState.wallet+=35;
+                ffaToast('+'+(ffaEquippedPet==='coinling'?95:60)+' cabbages. '+bot.name+' got munched.');
+                ffaSave();ffaUpdateHUD();
+            }
+        }
+        function horrorMakeZombie(index) {
+            const g=new THREE.Group();
+            const rotGreen=new THREE.MeshStandardMaterial({color:0x526f38,roughness:1});
+            const paleGreen=new THREE.MeshStandardMaterial({color:0x81975a,roughness:.96});
+            const darkGreen=new THREE.MeshStandardMaterial({color:0x243a26,roughness:1});
+            const ragged=new THREE.MeshStandardMaterial({color:index%2?0x403d32:0x4f493c,roughness:1});
+            const eyeMat=new THREE.MeshStandardMaterial({color:0xff382f,emissive:0xc21d14,emissiveIntensity:2.2,roughness:.18});
+            const toothMat=new THREE.MeshStandardMaterial({color:0xe5ddbd,roughness:.85});
+            const sphere=(parent,geo,mat,pos,scale)=>{const m=new THREE.Mesh(geo,mat);m.position.set(...pos);if(scale)m.scale.set(...scale);m.castShadow=true;m.receiveShadow=true;parent.add(m);return m;};
+            const box=(parent,geo,mat,pos)=>{const m=new THREE.Mesh(geo,mat);m.position.set(...pos);m.castShadow=true;m.receiveShadow=true;parent.add(m);return m;};
+            // Rotten torso and torn work clothes.
+            sphere(g,new THREE.SphereGeometry(.43,14,12),rotGreen,[0,1.1,0],[.95,1.25,.7]);
+            box(g,new THREE.BoxGeometry(.72,.72,.38),ragged,[0,1.13,0]);
+            for(let i=0;i<4;i++){const tear=box(g,new THREE.BoxGeometry(.12,.28,.035),darkGreen,[(i-1.5)*.16,.92,.21]);tear.rotation.z=(i%2?-.22:.18);}
+            // Cabbage head with layered leaves instead of a human head.
+            sphere(g,new THREE.SphereGeometry(.48,16,14),paleGreen,[0,2.05,.03],[1.08,.92,.88]);
+            for(let i=0;i<9;i++){
+                const a=i*Math.PI*2/9;const leaf=sphere(g,new THREE.SphereGeometry(.3,10,8),i%2?rotGreen:darkGreen,[Math.cos(a)*.3,2.01+Math.sin(a*2)*.13,Math.sin(a)*.25+.02],[1.15,.42,.78]);leaf.rotation.y=-a;leaf.rotation.z=Math.sin(a)*.3;
+            }
+            for(const x of [-.19,.19])sphere(g,new THREE.SphereGeometry(.075,10,8),eyeMat,[x,2.12,.42],[1,.85,.45]);
+            const mouth=box(g,new THREE.BoxGeometry(.31,.12,.06),darkGreen,[0,1.86,.46]);
+            for(const x of [-.09,.09]){const tooth=new THREE.Mesh(new THREE.ConeGeometry(.045,.13,5),toothMat);tooth.position.set(x,1.89,.51);tooth.rotation.x=Math.PI;g.add(tooth);}
+            // Long arms and crooked legs.
+            const arms=[],legs=[];
+            for(const side of [-1,1]){
+                const arm=new THREE.Group();arm.position.set(side*.47,1.55,0);g.add(arm);arms.push(arm);
+                const upper=new THREE.Mesh(new THREE.CylinderGeometry(.13,.18,.55,10),ragged);upper.position.y=-.25;upper.rotation.z=side*.15;arm.add(upper);
+                sphere(arm,new THREE.SphereGeometry(.16,9,8),rotGreen,[side*.04,-.55,.03],[1,1.1,1]);
+                const claw=new THREE.Mesh(new THREE.ConeGeometry(.16,.3,6),darkGreen);claw.position.set(side*.06,-.78,.12);claw.rotation.x=-Math.PI/2;arm.add(claw);
+                const leg=new THREE.Group();leg.position.set(side*.21,.65,0);g.add(leg);legs.push(leg);
+                const thigh=new THREE.Mesh(new THREE.CylinderGeometry(.15,.19,.48,10),ragged);thigh.position.y=-.22;leg.add(thigh);
+                const shin=new THREE.Mesh(new THREE.CylinderGeometry(.11,.15,.4,10),rotGreen);shin.position.y=-.62;leg.add(shin);
+                box(leg,new THREE.BoxGeometry(.3,.14,.42),darkGreen,[0,-.86,.06]);
+            }
+            g.position.copy(ffaFindSpawnPoint(3));ffaArena.add(g);
+            return {group:g,health:78+Math.min(72,horrorWave*7),maxHealth:78+Math.min(72,horrorWave*7),alive:true,phase:Math.random()*6.28,attackTimer:1+Math.random()*1.5,stun:0,arms,legs,speed:1.65+Math.random()*.65+horrorWave*.055};
+        }
+        function horrorSpawnWave(count) {
+            horrorZombies.forEach(z=>ffaArena.remove(z.group));horrorZombies=[];
+            for(let i=0;i<count;i++)horrorZombies.push(horrorMakeZombie(i));
+            horrorBreakTimer=0;horrorBreakAnnounced=false;
+            ffaUpdateHUD();
+            ffaToast('WAVE '+horrorWave+' • '+count+' ZOMBCABBAGES INCOMING',false);
+        }
+        function horrorNearestZombie(from,maxDist=60) {
+            let best=null,dist=maxDist;
+            for(const z of horrorZombies){if(!z.alive)continue;const d=z.group.position.distanceTo(from);if(d<dist){dist=d;best=z;}}
+            return best;
+        }
+        function horrorSpawnLoot(position,kind='cash',amount=45,skinId=null) {
+            const group=new THREE.Group();
+            if(kind==='skin'){
+                const skin=FFA_SKINS.find(x=>x.id===skinId)||FFA_SKINS[1];
+                const box=new THREE.Mesh(new THREE.BoxGeometry(.52,.52,.52),new THREE.MeshStandardMaterial({color:skin.color,metalness:.35,roughness:.35,emissive:skin.color,emissiveIntensity:.24}));box.rotation.set(.3,.4,.2);group.add(box);
+                const ring=new THREE.Mesh(new THREE.TorusGeometry(.42,.045,8,24),new THREE.MeshStandardMaterial({color:0xfde68a,metalness:.6,emissive:0xb7791f,emissiveIntensity:.35}));group.add(ring);
+            } else if(kind==='medkit'){
+                const pack=new THREE.Mesh(new THREE.BoxGeometry(.48,.34,.25),new THREE.MeshStandardMaterial({color:0xe8eee8,roughness:.65}));group.add(pack);
+                const crossMat=new THREE.MeshStandardMaterial({color:0xdc3434,emissive:0x681515,emissiveIntensity:.25});
+                const vertical=new THREE.Mesh(new THREE.BoxGeometry(.1,.27,.03),crossMat);vertical.position.z=.14;group.add(vertical);
+                const horizontal=new THREE.Mesh(new THREE.BoxGeometry(.27,.1,.03),crossMat);horizontal.position.z=.14;group.add(horizontal);
+            } else {
+                const coin=new THREE.Mesh(new THREE.CylinderGeometry(.27,.27,.09,20),new THREE.MeshStandardMaterial({color:0xeabf35,metalness:.78,roughness:.24,emissive:0x75520c,emissiveIntensity:.35}));coin.rotation.x=Math.PI/2;group.add(coin);
+                const leaf=new THREE.Mesh(new THREE.SphereGeometry(.16,10,8),new THREE.MeshStandardMaterial({color:0x85c74e,roughness:.6}));leaf.position.y=.16;group.add(leaf);
+            }
+            group.position.copy(position);group.position.y=.65;group.userData.kind=kind;group.userData.amount=amount;group.userData.skinId=skinId;ffaArena.add(group);
+            horrorLoot.push({group,kind,amount,skinId,phase:Math.random()*6.28});
+        }
+        function horrorDamageZombie(z,damage) {
+            if(!z||!z.alive)return;
+            z.health-=damage;z.group.scale.set(1.12,.9,1.12);
+            if(z.health<=0){
+                z.health=0;z.alive=false;z.group.visible=false;ffaKills++;
+                const reward=45+Math.floor(Math.random()*36)+(ffaEquippedPet==='coinling'?20:0);
+                horrorSpawnLoot(z.group.position,'cash',reward,null);
+                if(Math.random()<.22)horrorSpawnLoot(z.group.position.clone().add(new THREE.Vector3(-.7,.1,.35)),'medkit',30,null);
+                const possible=FFA_SKINS.filter(x=>x.id!=='field'&&!ffaOwnedSkins.includes(x.id));
+                if(possible.length&&Math.random()<.16){const skin=possible[Math.floor(Math.random()*possible.length)];horrorSpawnLoot(z.group.position.clone().add(new THREE.Vector3(.8,.2,.25)),'skin',0,skin.id);}
+                ffaSave();ffaUpdateHUD();
+            }
+        }
+        function horrorUpdate(delta,time) {
+            let alive=0;
+            for(const z of horrorZombies){
+                if(!z.alive)continue;alive++;
+                const dx=camera.position.x-z.group.position.x,dz=camera.position.z-z.group.position.z;const dist=Math.hypot(dx,dz);
+                z.phase+=delta*2.3;z.attackTimer-=delta;if(z.stun>0)z.stun-=delta;
+                if(z.stun<=0&&dist>1.55){
+                    const vx=dx/(dist||1)*z.speed*delta,vz=dz/(dist||1)*z.speed*delta;
+                    const x=z.group.position.x,z0=z.group.position.z;
+                    if(!ffaIsBlocked(x+vx,z0,.48,0,false))z.group.position.x+=vx;
+                    if(!ffaIsBlocked(z.group.position.x,z0+vz,.48,0,false))z.group.position.z+=vz;
+                }
+                z.group.lookAt(camera.position.x,0,camera.position.z);
+                const swing=Math.sin(time*7+z.phase)*.55;
+                z.legs[0].rotation.x=swing;z.legs[1].rotation.x=-swing;
+                z.arms[0].rotation.x=-.5+swing*.35;z.arms[1].rotation.x=-.5-swing*.35;
+                if(dist<1.8&&z.attackTimer<=0){z.attackTimer=1.15+Math.random()*.35;ffaDamagePlayer(8+Math.min(9,horrorWave));ffaToast('A ZOMBCABBAGE BIT YOU!',false);}
+            }
+            for(let i=horrorLoot.length-1;i>=0;i--){
+                const loot=horrorLoot[i];loot.phase+=delta*2.5;loot.group.rotation.y+=delta*.8;loot.group.position.y=.65+Math.sin(loot.phase)*.12;
+                if(loot.group.position.distanceTo(camera.position)<1.65){
+                    if(loot.kind==='cash'){gameState.wallet+=loot.amount;ffaToast('LOOTED +'+loot.amount+' CABBAGES');}
+                    else if(loot.kind==='medkit'){const healed=Math.min(loot.amount,ffaMaxHealth-ffaHealth);ffaHealth=Math.min(ffaMaxHealth,ffaHealth+loot.amount);ffaToast(healed>0?'FIRST AID FOUND • +'+healed+' HP':'FIRST AID FOUND • HEALTH ALREADY FULL');}
+                    else {
+                        const skin=FFA_SKINS.find(x=>x.id===loot.skinId);
+                        if(skin&&!ffaOwnedSkins.includes(skin.id)){ffaOwnedSkins.push(skin.id);ffaToast('RARE SKIN UNLOCKED: '+skin.name+'!');}
+                        else {gameState.wallet+=500;ffaToast('DUPLICATE SKIN! +500 CABBAGES');}
+                    }
+                    ffaSave();ffaUpdateHUD();ffaArena.remove(loot.group);horrorLoot.splice(i,1);
+                }
+            }
+            if(alive===0&&horrorZombies.length>0){
+                if(!horrorBreakAnnounced){horrorBreakAnnounced=true;horrorBreakTimer=5;ffaToast('WAVE CLEARED • COLLECT THE LOOT');}
+                else {horrorBreakTimer-=delta;if(horrorBreakTimer<=0){horrorWave++;gameState.wallet+=100;ffaSave();horrorSpawnWave(Math.min(18,4+horrorWave*2));horrorSpawnPickups();}}
+            }
+        }
+        function horrorReset() {
+            horrorZombies.forEach(z=>ffaArena&&ffaArena.remove(z.group));horrorZombies=[];
+            horrorLoot.forEach(l=>ffaArena&&ffaArena.remove(l.group));horrorLoot=[];
+            horrorWave=1;horrorBreakTimer=0;horrorBreakAnnounced=false;
+        }
+
+        function ffaDamagePlayer(amount) {
+            if(!ffaActive)return;
+            ffaHealth-=amount;
+            if(ffaHealth<=0){ffaHealth=0;ffaDeaths++;ffaUpdateHUD();ffaToast('YOU GOT CABBAGED. Respawning...',false);setTimeout(()=>{if(ffaActive){const spawn=ffaFindSpawnPoint(3);camera.position.set(spawn.x,PLAYER_HEIGHT,spawn.z);ffaHealth=100;ffaUpdateHUD();}},1100);}
+            else ffaUpdateHUD();
+        }
+        function ffaNearestBot(from, maxDist=60) {
+            let best=null,dist=maxDist;
+            ffaBots.forEach(b=>{if(!b.alive)return;const d=b.group.position.distanceTo(from);if(d<dist){dist=d;best=b;}});
+            return best;
+        }
+        function ffaUpdateBots(delta,time) {
+            const now=performance.now();
+            for(const b of ffaBots){
+                if(b.remote){netUpdateRemote(b,delta,time);continue;}
+                if(!b.alive){if(now>=b.respawnAt){b.health=100;b.alive=true;b.group.visible=true;b.group.position.copy(ffaFindSpawnPoint(2.5));b.shootTimer=1+Math.random()*2;}continue;}
+                const dx=camera.position.x-b.group.position.x,dz=camera.position.z-b.group.position.z;
+                const dist=Math.hypot(dx,dz);
+                b.phase+=delta*1.3;
+                let moveX=0,moveZ=0;
+                if(b.stun>0)b.stun-=delta;
+                else if(dist>6){moveX=(dx/(dist||1))*delta*(2.6+Math.sin(b.phase)*.35);moveZ=(dz/(dist||1))*delta*(2.6+Math.cos(b.phase)*.35);}
+                else {moveX=Math.cos(b.phase)*delta*1.15;moveZ=Math.sin(b.phase)*delta*1.15;}
+                const bx=b.group.position.x,bz=b.group.position.z;
+                if(!ffaIsBlocked(bx+moveX,bz,.58,0,false,b))b.group.position.x+=moveX;else b.phase+=1.6;
+                if(!ffaIsBlocked(b.group.position.x,bz+moveZ,.58,0,false,b))b.group.position.z+=moveZ;else b.phase+=1.1;
+                b.group.lookAt(camera.position.x,0,camera.position.z);
+                const moving=Math.abs(moveX)+Math.abs(moveZ)>.002;
+                const swing=moving?Math.sin(time*7+b.phase)*.48:Math.sin(time*2+b.phase)*.035;
+                if(b.legPivots){b.legPivots[0].rotation.x=swing;b.legPivots[1].rotation.x=-swing;}
+                if(b.armPivots){b.armPivots[0].rotation.x=-swing*.55-.12;b.armPivots[1].rotation.x=swing*.55-.12;}
+                b.shootTimer-=delta;
+                if(dist<27 && b.shootTimer<=0){
+                    b.shootTimer=1.4+Math.random()*1.6;
+                    const start=b.group.position.clone().add(new THREE.Vector3(0,1.5,0));
+                    const target=camera.position.clone().add(new THREE.Vector3(0,-.35,0));
+                    const aim=target.sub(start).normalize();
+                    ffaSpawnShot(start,aim,'bot',7,0xf97316,14,.14);
+                }
+            }
+        }
+        function ffaUpdateShots(delta) {
+            for(let i=ffaShots.length-1;i>=0;i--){
+                const s=ffaShots[i];s.life-=delta;s.mesh.position.addScaledVector(s.velocity,delta);
+                let hit=false;
+                if(s.owner==='player'||s.owner==='pet'){
+                    for(const b of ffaBots){if(!b.alive)continue;const center=b.group.position.clone().add(new THREE.Vector3(0,1.3,0));if(s.mesh.position.distanceTo(center)<.8){if(b.remote)netHit(b,s.damage);else ffaDamageBot(b,s.damage);hit=true;break;}}
+                    if(!hit&&ffaMode==='horror'){
+                        for(const z of horrorZombies){if(!z.alive)continue;const center=z.group.position.clone().add(new THREE.Vector3(0,1.75,0));if(s.mesh.position.distanceTo(center)<.88){horrorDamageZombie(z,s.damage);hit=true;break;}}
+                    }
+                } else if(!ffaOnline){
+                    if(s.mesh.position.distanceTo(camera.position)<.85){ffaDamagePlayer(s.damage);hit=true;}
+                }
+                if(!hit&&ffaIsShotBlocked(s.mesh.position))hit=true;
+                if(hit||s.life<=0||Math.abs(s.mesh.position.x)>ffaArenaHalf+5||Math.abs(s.mesh.position.z)>ffaArenaHalf+5){scene.remove(s.mesh);ffaShots.splice(i,1);}
+            }
+        }
+        function ffaMakeCabagling(id) {
+            const pet=createCabbage();
+            const eyeMat=new THREE.MeshStandardMaterial({color:0x101820,roughness:.25});
+            const shineMat=new THREE.MeshBasicMaterial({color:0xffffff});
+            for(const x of [-.095,.095]){
+                const eye=new THREE.Mesh(new THREE.SphereGeometry(.035,10,8),eyeMat);eye.position.set(x,.075,.245);pet.add(eye);
+                const shine=new THREE.Mesh(new THREE.SphereGeometry(.012,8,6),shineMat);shine.position.set(x-.012,.088,.273);pet.add(shine);
+            }
+            const mouth=new THREE.Mesh(new THREE.TorusGeometry(.045,.012,5,12,Math.PI),new THREE.MeshStandardMaterial({color:0x28412a}));mouth.position.set(0,-.015,.26);mouth.rotation.z=Math.PI;pet.add(mouth);
+            const footMat=new THREE.MeshStandardMaterial({color:0x46372b,roughness:.95});
+            for(const x of [-.13,.13]){const foot=new THREE.Mesh(new THREE.SphereGeometry(.075,8,6),footMat);foot.scale.set(1,.55,1.2);foot.position.set(x,-.29,.04);pet.add(foot);}
+            if(id==='medic'){
+                const crossMat=new THREE.MeshStandardMaterial({color:0xff8c9b,emissive:0x6d152b,emissiveIntensity:.25});
+                const v=new THREE.Mesh(new THREE.BoxGeometry(.07,.22,.035),crossMat);v.position.set(0,.28,-.04);pet.add(v);
+                const h=new THREE.Mesh(new THREE.BoxGeometry(.22,.07,.035),crossMat);h.position.set(0,.28,-.04);pet.add(h);
+            } else if(id==='coinling'){
+                const coin=new THREE.Mesh(new THREE.TorusGeometry(.12,.035,8,18),new THREE.MeshStandardMaterial({color:0xfbbf24,metalness:.8,roughness:.25}));coin.position.set(0,.29,-.03);pet.add(coin);
+            } else if(id==='chomper'){
+                const hornMat=new THREE.MeshStandardMaterial({color:0xf5e6bd,roughness:.6});
+                for(const x of [-.16,.16]){const horn=new THREE.Mesh(new THREE.ConeGeometry(.055,.18,8),hornMat);horn.position.set(x,.25,.02);horn.rotation.z=x>0?-.35:.35;pet.add(horn);}
+            } else {
+                const leaf=new THREE.Mesh(new THREE.SphereGeometry(.095,9,7),new THREE.MeshStandardMaterial({color:0x91c95f,roughness:.9}));leaf.scale.set(.4,1.5,.3);leaf.position.set(0,.32,-.02);pet.add(leaf);
+            }
+            pet.userData.cabaglingId=id;
+            return pet;
+        }
+
+        function ffaUpdatePet(delta) {
+            if(!ffaEquippedPet||!ffaPetMesh)return;
+            const forward=new THREE.Vector3(-Math.sin(yaw),0,-Math.cos(yaw));
+            const side=new THREE.Vector3(Math.cos(yaw),0,-Math.sin(yaw));
+            const target=camera.position.clone().add(forward.clone().multiplyScalar(1.05)).add(side.clone().multiplyScalar(-.82));target.y=.38;
+            ffaPetMesh.position.lerp(target,Math.min(1,delta*5));
+            ffaPetMesh.position.y=.38+Math.sin(performance.now()*.004)*.045;
+            ffaPetMesh.lookAt(camera.position.x,.35,camera.position.z);
+            ffaPetCooldown-=delta;ffaPetHealTimer-=delta;
+            if((ffaEquippedPet==='sprouty'||ffaEquippedPet==='chomper')&&ffaPetCooldown<=0){
+                let targetEnemy=null;
+                if(ffaMode==='horror')targetEnemy=horrorNearestZombie(camera.position,24);
+                else targetEnemy=ffaNearestBot(camera.position,22);
+                if(targetEnemy){const from=ffaPetMesh.position.clone().add(new THREE.Vector3(0,.2,0));const to=targetEnemy.group.position.clone().add(new THREE.Vector3(0,ffaMode==='horror'?.65:1.3,0));ffaSpawnShot(from,to.sub(from).normalize(),'pet',ffaEquippedPet==='chomper'?26:14,0x5eead4,27,.1);ffaPetCooldown=ffaEquippedPet==='chomper'?2.1:3.4;}
+            }
+            if(ffaEquippedPet==='medic'&&ffaPetHealTimer<=0){if(ffaHealth<90){ffaHealth=Math.min(100,ffaHealth+15);ffaToast('Medic Leaf healed you +15 HP');ffaUpdateHUD();}ffaPetHealTimer=18;}
+        }
+        function ffaUpdatePortal() {
+            if(!ffaPortalA||!ffaPortalB||ffaPortalCooldown>0)return;
+            const dA=Math.hypot(camera.position.x-ffaPortalA.position.x,camera.position.z-ffaPortalA.position.z);
+            const dB=Math.hypot(camera.position.x-ffaPortalB.position.x,camera.position.z-ffaPortalB.position.z);
+            if(dA<1.25||dB<1.25){const target=dA<1.25?ffaPortalB:ffaPortalA;camera.position.set(target.position.x,PLAYER_HEIGHT,target.position.z+1.6);ffaPortalCooldown=1.4;ffaToast('PORTAL YEET!');}
+        }
+        function ffaUsePeelBomb() {
+            if(!ffaActive||ffaPeelBombs<=0){ffaToast('No banana peel bombs. Visit the armoury.',false);return;}
+            ffaPeelBombs--;let hits=0;
+            ffaBots.forEach(b=>{if(b.alive&&b.group.position.distanceTo(camera.position)<9){b.stun=3;ffaDamageBot(b,35);hits++;}});
+            if(ffaMode==='horror')horrorZombies.forEach(z=>{if(z.alive&&z.group.position.distanceTo(camera.position)<9){z.stun=3;horrorDamageZombie(z,45);hits++;}});
+            ffaSave();ffaToast('BANANA CHAOS! '+hits+' bots caught slipping.');
+        }
+        function ffaUseCola() {
+            if(!ffaActive||ffaCola<=0){ffaToast('You are out of Cabbage-Cola.',false);return;}
+            if(ffaHealth>=100){ffaToast('Your health is already full.',false);return;}
+            ffaCola--;ffaHealth=Math.min(100,ffaHealth+35);ffaSave();ffaUpdateHUD();ffaToast('CABBAGE-COLA! +35 HP');
+        }
+        function ffaToggleVehicle() {
+            if(!ffaActive)return;
+            if(!ffaOwnedGadgets.includes('leafhog')){ffaToast('The Leafhog costs 1,200 cabbages in the armoury.',false);return;}
+            ffaDriving=!ffaDriving;
+            ffaVehicle.visible=ffaDriving;
+            ffaToast(ffaDriving?'LEAFHOG ENGAGED. VROOM LEAF VROOM.':'You got out of the Leafhog.');
+        }
+        function ffaUpdateVehicle() {
+            if(!ffaVehicle||!ffaDriving)return;
+            const forward=new THREE.Vector3(-Math.sin(yaw),0,-Math.cos(yaw));
+            ffaVehicle.position.set(camera.position.x-forward.x*.6,.0,camera.position.z-forward.z*.6);
+            ffaVehicle.rotation.y=yaw;
+        }
+        function ffaUpdateMovement(delta) {
+            const step=Math.min(delta,0.035);
+            const forward=new THREE.Vector3(-Math.sin(yaw),0,-Math.cos(yaw));
+            const right=new THREE.Vector3(Math.cos(yaw),0,-Math.sin(yaw));
+            const input=new THREE.Vector3();
+            if(ffaKeys.KeyW||ffaKeys.ArrowUp)input.add(forward);
+            if(ffaKeys.KeyS||ffaKeys.ArrowDown)input.sub(forward);
+            if(ffaKeys.KeyD||ffaKeys.ArrowRight)input.add(right);
+            if(ffaKeys.KeyA||ffaKeys.ArrowLeft)input.sub(right);
+            const speed=ffaDriving?15.5:((ffaKeys.ShiftLeft||ffaKeys.ShiftRight)?13.2:7.4);
+            const hasInput=input.lengthSq()>0;
+            const desiredVelocity=hasInput?input.normalize().multiplyScalar(speed):new THREE.Vector3();
+            const response=hasInput?18:24;
+            ffaMoveVelocity.lerp(desiredVelocity,1-Math.exp(-response*step));
+
+            // Capsule-style horizontal collision, resolved per axis so players can slide along cover.
+            const feet=Math.max(0,camera.position.y-PLAYER_HEIGHT);
+            const nextX=THREE.MathUtils.clamp(camera.position.x+ffaMoveVelocity.x*step,-ffaArenaHalf+2.2,ffaArenaHalf-2.2);
+            if(!ffaIsBlocked(nextX,camera.position.z,FFA_PLAYER_RADIUS,feet,true)){camera.position.x=nextX;}
+            else ffaMoveVelocity.x=0;
+            const nextZ=THREE.MathUtils.clamp(camera.position.z+ffaMoveVelocity.z*step,-ffaArenaHalf+2.2,ffaArenaHalf-2.2);
+            if(!ffaIsBlocked(camera.position.x,nextZ,FFA_PLAYER_RADIUS,feet,true)){camera.position.z=nextZ;}
+            else ffaMoveVelocity.z=0;
+
+            const support=ffaGetSupportHeight(camera.position.x,camera.position.z);
+            if(ffaJumpQueued&&ffaOnGround){ffaJumpVelocity=7.8;ffaOnGround=false;}
+            ffaJumpQueued=false;
+            const currentFeet=camera.position.y-PLAYER_HEIGHT;
+            if(!ffaOnGround||currentFeet>support+.025){
+                const previousFeet=currentFeet;
+                ffaJumpVelocity-=18*step;
+                const nextY=camera.position.y+ffaJumpVelocity*step;
+                const nextFeet=nextY-PLAYER_HEIGHT;
+                if(ffaJumpVelocity<=0&&previousFeet>=support&&nextFeet<=support){
+                    camera.position.y=PLAYER_HEIGHT+support;ffaJumpVelocity=0;ffaOnGround=true;
+                }else if(nextY<=PLAYER_HEIGHT){camera.position.y=PLAYER_HEIGHT;ffaJumpVelocity=0;ffaOnGround=true;}
+                else {camera.position.y=nextY;ffaOnGround=false;}
+            }else{
+                camera.position.y=PLAYER_HEIGHT+support;ffaJumpVelocity=0;ffaOnGround=true;
+            }
+        }
+        function ffaStart(mode) {
+            ffaMode=mode;ffaActive=true;ffaMenuOpen=false;ffaShopOpen=false;pauseOpen=false;
+            document.getElementById('ffa-mode-modal').classList.add('hidden');document.getElementById('ffa-mode-modal').classList.remove('flex');
+            document.getElementById('main-hud').style.display='none';document.getElementById('ffa-hud').classList.remove('hidden');
+            document.getElementById('crosshair').style.display='flex';
+            singleDirtBlock.visible=false;cabbageContainer.visible=false;weatherPoints.visible=false;
+            ffaBuildArena();ffaArena.visible=true;ffaClearShots();horrorReset();
+            if(ffaPortalA)ffaArena.remove(ffaPortalA);if(ffaPortalB)ffaArena.remove(ffaPortalB);ffaPortalA=null;ffaPortalB=null;
+            camera.position.set(0,PLAYER_HEIGHT,ffaArenaHalf-13);yaw=0;pitch=0;camera.rotation.set(0,0,0);
+            ffaMoveVelocity.set(0,0,0);ffaJumpVelocity=0;ffaOnGround=true;ffaJumpQueued=false;
+            ffaKills=0;ffaDeaths=0;ffaHealth=100;ffaDriving=false;ffaReloading=false;ffaAmmo={};for(const w of ffaOwnedWeapons)ffaAmmo[w]={mag:w==='sniper'?5:w==='cauli'?4:w==='brussels'?24:w==='leafblower'?36:30,reserve:90};ffaAmmo.popper=ffaAmmo.popper||{mag:30,reserve:90};
+            ffaResetBots(mode==='horror'||ffaOnline?0:(ffaBotsEnabled?(mode==='duel'?1:7):0));
+            ffaMakeWeaponView();ffaMakeVehicle();ffaVehicle.visible=false;
+            if(ffaPetMesh)scene.remove(ffaPetMesh);ffaPetMesh=null;
+            if(ffaEquippedPet){ffaPetMesh=ffaMakeCabagling(ffaEquippedPet);ffaPetMesh.scale.setScalar(1.05);scene.add(ffaPetMesh);ffaPetHealTimer=10;ffaPetCooldown=1;}
+            if(mode==='horror'){
+                scene.background=new THREE.Color(0x07110f);scene.fog=new THREE.FogExp2(0x14221a,.023);
+                ambientLight.intensity=.18;sunLight.intensity=.12;
+                horrorLight=new THREE.PointLight(0x9bcf7a,1.8,58);horrorLight.position.set(camera.position.x,camera.position.y+2,camera.position.z);scene.add(horrorLight);
+                horrorWave=1;horrorSpawnWave(6);horrorSpawnPickups();
+            } else {
+                scene.background=new THREE.Color(0x91c7e9);scene.fog=new THREE.FogExp2(0x91c7e9,.008);
+                ambientLight.intensity=.45;sunLight.intensity=1.3;
+            }
+            ffaUpdateHUD();
+            document.getElementById('pointer-prompt').style.opacity='0';
+            requestLock();
+            ffaToast(mode==='horror'?'THE NIGHT SHIFT STARTS. WATCH THE CABBAGE PATCHES.':(ffaBots.length===0?'FREE ROAM. NO BOTS, JUST VIBES.':(mode==='duel'?'1V1 DUEL. ONLY ONE BOT.':'FFA MULTIPLAYER STARTED.')));
+        }
+        function openFFAMenu() {
+            if(!gameState.gameStarted)return;
+            ffaMenuOpen=true;document.exitPointerLock();
+            const el=document.getElementById('ffa-mode-modal');el.classList.remove('hidden');el.classList.add('flex');
+        }
+        function closeFFAMenu() {
+            ffaMenuOpen=false;const el=document.getElementById('ffa-mode-modal');el.classList.add('hidden');el.classList.remove('flex');requestLock();
+        }
+        function leaveFFA() {
+            netLeave();
+            ffaActive=false;ffaShopOpen=false;ffaDriving=false;
+            if(horrorLight){scene.remove(horrorLight);horrorLight=null;}
+            horrorReset();ffaPickups.forEach(p=>ffaArena&&ffaArena.remove(p.group));ffaPickups=[];ambientLight.intensity=.45;sunLight.intensity=1.3;document.getElementById('ffa-wave').classList.add('hidden');
+            document.exitPointerLock();
+            document.getElementById('ffa-hud').classList.add('hidden');
+            document.getElementById('ffa-shop-modal').classList.add('hidden');document.getElementById('ffa-shop-modal').classList.remove('flex');
+            document.getElementById('main-hud').style.display='';
+            singleDirtBlock.visible=true;cabbageContainer.visible=true;weatherPoints.visible=true;
+            if(ffaWeaponView){camera.remove(ffaWeaponView);ffaWeaponView=null;}
+            if(ffaVehicle)ffaVehicle.visible=false;
+            if(ffaPetMesh){scene.remove(ffaPetMesh);ffaPetMesh=null;}
+            if(ffaArena)ffaArena.visible=false;
+            ffaClearShots();
+            camera.position.set(0,PLAYER_HEIGHT,0);yaw=0;pitch=0;camera.rotation.set(0,0,0);
+            ffaMoveVelocity.set(0,0,0);ffaJumpVelocity=0;ffaOnGround=true;ffaJumpQueued=false;
+            scene.background=new THREE.Color(0xa0e0ff);scene.fog=new THREE.FogExp2(0xa0e0ff,.012);
+            document.getElementById('pointer-prompt').style.opacity='1';
+            ffaSave();
+            ffaToast('Back to peaceful cabbage munching. Mostly peaceful.');
+        }
+        function openFFAShop() {
+            if(!gameState.gameStarted)return;
+            ffaShopOpen=true;document.exitPointerLock();
+            const el=document.getElementById('ffa-shop-modal');el.classList.remove('hidden');el.classList.add('flex');
+            ffaRenderShop();
+        }
+        function closeFFAShop() {
+            ffaShopOpen=false;const el=document.getElementById('ffa-shop-modal');el.classList.add('hidden');el.classList.remove('flex');
+            if(ffaActive)requestLock();else if(ffaMenuOpen){const m=document.getElementById('ffa-mode-modal');m.classList.remove('hidden');m.classList.add('flex');}
+        }
+        function ffaRenderShop() {
+            document.getElementById('ffa-shop-balance').textContent=gameState.wallet.toLocaleString();
+            const area=document.getElementById('ffa-shop-content');
+            if(ffaShopTab==='skins'){
+                area.innerHTML=FFA_SKINS.map(item=>{
+                    const owned=ffaOwnedSkins.includes(item.id),equipped=ffaEquippedSkin===item.id;
+                    const lockedEvent=item.id==='zombified';
+                    const label=equipped?'EQUIPPED':owned?'EQUIP SKIN':lockedEvent&&!owned?'HORROR DROP ONLY':'UNLOCK • '+item.cost.toLocaleString()+' 🍃';
+                    const action=owned?'equip-skin':'buy-skin';
+                    return `<div class="loot-card flex flex-col gap-3"><div class="flex items-center gap-3"><div class="flex h-14 w-14 items-center justify-center rounded-2xl border border-white/15 text-3xl shadow-inner" style="background:linear-gradient(145deg,#${item.color.toString(16).padStart(6,'0')},#111827)">${item.icon}</div><div class="min-w-0 flex-1"><h3 class="font-black text-white">${item.name}</h3><p class="text-[10px] text-slate-400">${item.desc}</p></div></div><div class="flex items-center justify-between text-[10px] font-black"><span class="text-amber-300">${item.cost===0?(lockedEvent?'RARE DROP':'FREE') : item.cost.toLocaleString()+' CABBAGES'}</span><span class="text-emerald-300">${owned?'UNLOCKED':'LOCKED'}</span></div><button data-ffa-action="${action}" data-kind="skins" data-id="${item.id}" ${(!owned&&(lockedEvent||gameState.wallet<item.cost))?'disabled':''} class="rounded-xl py-2.5 text-xs font-black ${equipped?'bg-emerald-500 text-slate-950':owned?'bg-slate-700 text-white':'bg-amber-500 text-slate-950'} disabled:opacity-40">${label}</button></div>`;
+                }).join('');
+                return;
+            }
+            const cards=(items,type)=>items.map(item=>{
+                const owned=type==='weapons'?ffaOwnedWeapons.includes(item.id):type==='pets'?ffaOwnedPets.includes(item.id):ffaOwnedGadgets.includes(item.id);
+                const equipped=type==='weapons'?ffaCurrentWeapon===item.id:type==='pets'?ffaEquippedPet===item.id:false;
+                const qty=item.id==='cola'?ffaCola:item.id==='peelbomb'?ffaPeelBombs:0;
+                let action='BUY',label=owned?'OWNED':('BUY • '+item.cost.toLocaleString());
+                if(type==='weapons'&&owned){action='equip';label=equipped?'EQUIPPED':'EQUIP';}
+                else if(type==='pets'&&owned){action='equip-pet';label=equipped?'FOLLOWING YOU':'EQUIP CABAGLING';}
+                else if(type==='gadgets'&&owned&&item.id==='leafhog'){label='OWNED • PRESS F';}
+                else if(type==='gadgets'&&owned&&item.id==='golden'){label='OWNED';}
+                else if(type==='gadgets'&&(item.id==='cola'||item.id==='peelbomb')){action='buy';label='BUY ONE • '+item.cost.toLocaleString()+' (HAVE '+qty+')';}
+                const disabled=owned&&!(type==='weapons'||type==='pets')&&item.id!=='cola'&&item.id!=='peelbomb';
+                const icon=type==='pets'?({sprouty:'🥬',medic:'💚',coinling:'🪙',chomper:'😈'}[item.id]||'🥬'):type==='weapons'?'🔫':'🎒';
+                return `<div class="loot-card flex flex-col gap-2"><div class="flex items-center gap-3"><div class="flex h-12 w-12 items-center justify-center rounded-xl border border-white/10 bg-slate-950/60 text-2xl">${icon}</div><div class="min-w-0 flex-1"><h3 class="font-black text-white">${item.name}</h3><span class="text-[10px] font-black text-amber-300">${item.cost===0?'FREE':item.cost.toLocaleString()+' 🍃'}</span></div></div><p class="text-xs leading-relaxed text-slate-400 flex-1">${item.desc}</p>${qty>0?`<div class="text-[11px] text-emerald-300 font-bold">IN YOUR BAG: ${qty}</div>`:''}<button data-ffa-action="${action}" data-kind="${type}" data-id="${item.id}" ${disabled?'disabled':''} class="rounded-xl py-2.5 text-xs font-black ${equipped?'bg-emerald-500 text-slate-950':owned?'bg-slate-700 text-white':'bg-amber-500 text-slate-950 hover:bg-amber-400'} disabled:opacity-60">${label}</button></div>`;
+            }).join('');
+            area.innerHTML=ffaShopTab==='weapons'?cards(FFA_WEAPONS,'weapons'):ffaShopTab==='pets'?cards(FFA_PETS,'pets'):cards(FFA_GADGETS,'gadgets');
+        }
+        function ffaShopMessage(msg,bad=false){const el=document.getElementById('ffa-shop-message');el.textContent=msg;el.className='min-h-8 px-5 pb-3 text-sm font-bold '+(bad?'text-rose-300':'text-emerald-300');}
+        function ffaShopAction(action,kind,id) {
+            const pool=kind==='weapons'?FFA_WEAPONS:kind==='pets'?FFA_PETS:kind==='skins'?FFA_SKINS:FFA_GADGETS;
+            const item=pool.find(x=>x.id===id);if(!item)return;
+            if(action==='equip'){ffaSetWeapon(id);ffaShopMessage('Equipped '+item.name+'.');}
+            else if(action==='equip-skin'){
+                ffaEquippedSkin=id;ffaSave();if(ffaActive)ffaMakeWeaponView();ffaShopMessage('Skin equipped: '+item.name+'.');ffaUpdateHUD();
+            }
+            else if(action==='buy-skin'){
+                if(item.id==='zombified'){ffaShopMessage('Find this skin as a rare Horror Mode loot drop.',true);return;}
+                if(gameState.wallet<item.cost){ffaShopMessage('Not enough cabbages for that skin.',true);return;}
+                gameState.wallet-=item.cost;if(!ffaOwnedSkins.includes(id))ffaOwnedSkins.push(id);ffaEquippedSkin=id;
+                ffaSave();if(ffaActive)ffaMakeWeaponView();ffaShopMessage('Unlocked and equipped '+item.name+'!');ffaUpdateHUD();
+            }
+            else if(action==='equip-pet'){
+                ffaEquippedPet=ffaEquippedPet===id?null:id;ffaSave();
+                if(ffaActive){if(ffaPetMesh)scene.remove(ffaPetMesh);ffaPetMesh=null;if(ffaEquippedPet){ffaPetMesh=ffaMakeCabagling(ffaEquippedPet);ffaPetMesh.scale.setScalar(1.05);scene.add(ffaPetMesh);ffaPetCooldown=1;ffaPetHealTimer=10;}}
+                ffaShopMessage(ffaEquippedPet?' '+item.name+' is now following you.':'Cabagling sent back to the cabbage patch.');ffaUpdateHUD();
+            }
+            else {
+                if(gameState.wallet<item.cost){ffaShopMessage('Not enough cabbages. Go munch or win a fight!',true);return;}
+                gameState.wallet-=item.cost;
+                if(kind==='weapons')ffaOwnedWeapons.push(id);
+                else if(kind==='pets')ffaOwnedPets.push(id);
+                else if(id==='cola')ffaCola++;
+                else if(id==='peelbomb')ffaPeelBombs++;
+                else ffaOwnedGadgets.push(id);
+                ffaSave();ffaUpdateHUD();
+                ffaShopMessage('Purchased '+item.name+'.');
+            }
+            ffaRenderShop();
+        }
+        document.getElementById('ffa-cancel-btn').addEventListener('click',closeFFAMenu);
+        function setFFABotsEnabled(enabled) {
+            ffaBotsEnabled=enabled;
+            const on=document.getElementById('ffa-bots-on-btn'),off=document.getElementById('ffa-bots-off-btn');
+            on.className='rounded-xl border py-2.5 text-xs font-black '+(enabled?'border-emerald-300 bg-emerald-500 text-slate-950':'border-slate-600 bg-slate-800 text-slate-300');
+            off.className='rounded-xl border py-2.5 text-xs font-black '+(!enabled?'border-amber-300 bg-amber-500 text-slate-950':'border-slate-600 bg-slate-800 text-slate-300');
+        }
+        document.getElementById('ffa-bots-on-btn').addEventListener('click',()=>setFFABotsEnabled(true));
+        document.getElementById('ffa-bots-off-btn').addEventListener('click',()=>setFFABotsEnabled(false));
+        document.getElementById('ffa-start-btn').addEventListener('click',()=>ffaStart('ffa'));
+        document.getElementById('ffa-duel-btn').addEventListener('click',()=>ffaStart('duel'));
+        document.getElementById('ffa-online-btn').addEventListener('click',()=>netStartOnline(null));
+        document.getElementById('ffa-online-code-btn').addEventListener('click',()=>{const c=prompt('Friend room code (leave empty to cancel):','');if(c&&c.trim())netStartOnline(c.trim().toUpperCase());});
+        document.getElementById('horror-start-btn').addEventListener('click',()=>ffaStart('horror'));
+        setFFABotsEnabled(true);
+        document.getElementById('ffa-menu-shop-btn').addEventListener('click',openFFAShop);
+        document.getElementById('ffa-shop-close').addEventListener('click',closeFFAShop);
+        document.getElementById('ffa-shop-done').addEventListener('click',closeFFAShop);
+        document.querySelectorAll('.ffa-shop-tab').forEach(btn=>btn.addEventListener('click',()=>{
+            ffaShopTab=btn.dataset.tab;
+            document.querySelectorAll('.ffa-shop-tab').forEach(b=>{const on=b.dataset.tab===ffaShopTab;b.className='ffa-shop-tab rounded-xl py-2.5 text-sm font-black '+(on?'bg-amber-500 text-slate-950':'bg-slate-800 text-slate-300');});
+            ffaRenderShop();
+        }));
+        document.getElementById('ffa-shop-content').addEventListener('click',e=>{const b=e.target.closest('[data-ffa-action]');if(b)ffaShopAction(b.dataset.ffaAction,b.dataset.kind,b.dataset.id);});
+        document.addEventListener('keydown',e=>{
+            if(!ffaActive)return;
+            if(['Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.code))e.preventDefault();
+            if(!isPointerLocked||ffaShopOpen||pauseOpen||ffaMenuOpen)return;
+            const action=actionForCode(e.code);
+            const canonical=canonicalKeyForAction(action);
+            if(canonical) ffaKeys[canonical]=true;
+            else ffaKeys[e.code]=true;
+            if(action==='jump'&&!e.repeat)ffaJumpQueued=true;
+            if(action==='reload'&&!e.repeat)ffaReload();
+            if(action==='pickup'&&!e.repeat)ffaPickupAtPlayer();
+            if(action==='vehicle'&&!e.repeat)ffaToggleVehicle();
+            if(action==='gadget'&&!e.repeat)ffaUsePeelBomb();
+            if(action==='heal'&&!e.repeat)ffaUseCola();
+            if(action==='weapon1')ffaSetWeapon('popper');
+            if(action==='weapon2'&&ffaOwnedWeapons.includes('leafblower'))ffaSetWeapon('leafblower');
+            if(action==='weapon3'&&ffaOwnedWeapons.includes('cauli'))ffaSetWeapon('cauli');
+            if(action==='weapon4'&&ffaOwnedWeapons.includes('brussels'))ffaSetWeapon('brussels');
+            if(action==='weapon5'&&ffaOwnedWeapons.includes('sniper'))ffaSetWeapon('sniper');
+            if(action==='weapon6'&&ffaOwnedWeapons.includes('portal'))ffaSetWeapon('portal');
+        });
+        document.addEventListener('keyup',e=>{const a=actionForCode(e.code);const c=canonicalKeyForAction(a);if(c)ffaKeys[c]=false;else ffaKeys[e.code]=false;});
+        window.addEventListener('blur',()=>{Object.keys(ffaKeys).forEach(k=>ffaKeys[k]=false);ffaMoveVelocity.set(0,0,0);ffaJumpQueued=false;});
+        ffaLoad();
+
+        function updateFFA(delta,time) {
+            if(!ffaActive||pauseOpen||ffaShopOpen||ffaMenuOpen)return;
+            ffaPortalCooldown=Math.max(0,ffaPortalCooldown-delta);
+            if(ffaMode==='horror'&&horrorLight){horrorLight.position.copy(camera.position);horrorLight.position.y+=2.2;}
+            ffaUpdateMovement(delta);
+            netTick(delta);
+            if(ffaReloading){ffaReloadTimer-=delta;if(ffaWeaponView){ffaWeaponView.position.y=-.28-Math.sin(Math.max(0,1.15-ffaReloadTimer)/1.15*Math.PI)*.24;ffaWeaponView.rotation.x=-Math.sin(Math.max(0,1.15-ffaReloadTimer)/1.15*Math.PI)*.28;}if(ffaReloadTimer<=0){const a=ffaAmmo[ffaCurrentWeapon];const cap=ffaCurrentWeapon==='sniper'?5:ffaCurrentWeapon==='cauli'?4:ffaCurrentWeapon==='brussels'?24:ffaCurrentWeapon==='leafblower'?36:30;const take=Math.min(cap-a.mag,a.reserve);a.mag+=take;a.reserve-=take;ffaReloading=false;if(ffaWeaponView){ffaWeaponView.position.set(.34,-.28,-.55);ffaWeaponView.rotation.set(0,0,0);}ffaUpdateHUD();}}
+            if(ffaWeaponView&&!ffaReloading){ffaRecoil=Math.max(0,ffaRecoil-delta*.65);ffaWeaponView.position.y=-.28+ffaRecoil;ffaWeaponView.rotation.x=-ffaRecoil*1.8;}
+            if(ffaPickups.length){for(const p of ffaPickups){p.phase+=delta*2;p.group.rotation.y+=delta*.7;p.group.position.y=.12+Math.sin(p.phase)*.08;}ffaPickupAtPlayer();}
+            if(ffaMode==='horror')horrorUpdate(delta,time);else ffaUpdateBots(delta,time);
+            ffaUpdateShots(delta);
+            ffaUpdatePet(delta);
+            ffaUpdatePortal();
+            ffaUpdateVehicle();
+        }
+
+        // ---------- ONLINE FFA (socket.io) ----------
+        let ffaOnline = false, netSocket = null, netMyId = null, netDead = false;
+        let netRespawnTimer = null, netMoveAcc = 0;
+        const netRemoteById = new Map();
+
+        function netStatus(msg) { const el = document.getElementById('ffa-online-status'); if (el) el.textContent = msg; }
+
+        function netColorFor(id) {
+            const palette = [0xe57373, 0x64b5f6, 0xffb74d, 0xba68c8, 0x4db6ac, 0xfff176, 0xf06292, 0x81c784];
+            let h = 0;
+            for (const c of String(id)) h = (h * 31 + c.charCodeAt(0)) | 0;
+            return palette[Math.abs(h) % palette.length];
+        }
+
+        function netAddRemote(p) {
+            if (!ffaArena || netRemoteById.has(p.id)) return;
+            const bot = ffaMakeBot(p.name || 'Muncher', netColorFor(p.id));
+            bot.remote = true;
+            bot.id = p.id;
+            bot.alive = p.alive !== false;
+            bot.health = p.health == null ? 100 : p.health;
+            bot.target = new THREE.Vector3(p.x || 0, 0, p.z || 0);
+            bot.dir = { x: p.dx || 0, z: p.dz || 0 };
+            bot.group.position.set(p.x || 0, 0, p.z || 0);
+            bot.group.visible = bot.alive;
+            ffaBots.push(bot);
+            netRemoteById.set(p.id, bot);
+        }
+
+        function netRemoveRemote(id) {
+            const b = netRemoteById.get(id);
+            if (!b) return;
+            if (ffaArena) ffaArena.remove(b.group);
+            ffaBots = ffaBots.filter(x => x !== b);
+            netRemoteById.delete(id);
+        }
+
+        function netUpdateRemote(b, delta, time) {
+            if (!b.alive) { b.group.visible = false; return; }
+            b.group.visible = true;
+            const k = Math.min(1, delta * 12);
+            const prevX = b.group.position.x, prevZ = b.group.position.z;
+            b.group.position.x += (b.target.x - b.group.position.x) * k;
+            b.group.position.z += (b.target.z - b.group.position.z) * k;
+            const speed = Math.hypot(b.group.position.x - prevX, b.group.position.z - prevZ) / Math.max(delta, 1e-4);
+            if (Math.hypot(b.dir.x, b.dir.z) > 0.01) {
+                b.group.lookAt(b.group.position.x + b.dir.x, b.group.position.y, b.group.position.z + b.dir.z);
+            }
+            b.phase += delta * (speed > 0.3 ? 7 : 2);
+            const swing = speed > 0.3 ? Math.sin(time * 7 + b.phase) * .48 : Math.sin(time * 2 + b.phase) * .035;
+            if (b.legPivots) { b.legPivots[0].rotation.x = swing; b.legPivots[1].rotation.x = -swing; }
+            if (b.armPivots) { b.armPivots[0].rotation.x = -swing * .55 - .12; b.armPivots[1].rotation.x = swing * .55 - .12; }
+        }
+
+        function netBindEvents(s) {
+            s.on('player:join', p => { netAddRemote(p); ffaToast((p.name || 'A Muncher') + ' dropped into the field.'); });
+            s.on('player:leave', ({ id }) => {
+                const b = netRemoteById.get(id);
+                if (b) ffaToast(b.name + ' left the field.');
+                netRemoveRemote(id);
+            });
+            s.on('moves', list => {
+                for (const m of list) {
+                    if (m.id === netMyId) continue;
+                    const b = netRemoteById.get(m.id);
+                    if (!b) continue;
+                    b.target.set(m.x, 0, m.z);
+                    b.dir = { x: m.dx, z: m.dz };
+                }
+            });
+            s.on('shots', f => {
+                const spec = FFA_WEAPONS.find(w => w.id === f.weapon);
+                if (!spec || !f.o || !f.d || !ffaActive) return;
+                ffaSpawnShot(new THREE.Vector3(...f.o), new THREE.Vector3(...f.d), 'remote', 0, spec.color, spec.speed, .12);
+            });
+            s.on('health', ({ id, health }) => {
+                if (id === netMyId) { ffaHealth = health; ffaUpdateHUD(); return; }
+                const b = netRemoteById.get(id);
+                if (b) b.health = health;
+            });
+            s.on('kill', k => {
+                const victim = netRemoteById.get(k.victimId);
+                if (victim) { victim.alive = false; victim.group.visible = false; }
+                if (k.killerId === netMyId) {
+                    ffaKills++;
+                    gameState.wallet += ffaEquippedPet === 'coinling' ? 95 : 60;
+                    ffaSave();
+                    ffaToast('+' + (ffaEquippedPet === 'coinling' ? 95 : 60) + ' cabbages. ' + k.victimName + ' got munched.');
+                }
+                if (k.victimId === netMyId) {
+                    ffaDeaths++;
+                    netDead = true;
+                    ffaHealth = 0;
+                    ffaToast('YOU GOT CABBAGED by ' + k.killerName + '. Respawning...', false);
+                    clearTimeout(netRespawnTimer);
+                    netRespawnTimer = setTimeout(netRespawn, 2000);
+                }
+                ffaUpdateHUD();
+            });
+            s.on('respawn', r => {
+                if (r.id === netMyId) return;
+                const b = netRemoteById.get(r.id);
+                if (!b) return;
+                b.alive = true; b.health = 100;
+                b.group.visible = true;
+                b.group.position.set(r.x, 0, r.z);
+                b.target.set(r.x, 0, r.z);
+            });
+            s.on('disconnect', () => {
+                if (!ffaOnline) return;
+                netStatus('Disconnected from server.');
+                ffaToast('Disconnected from the server.', false);
+            });
+        }
+
+        function netConnect(code) {
+            return new Promise((resolve, reject) => {
+                const s = io({ transports: ['websocket', 'polling'], reconnection: false, timeout: 8000 });
+                netSocket = s;
+                netBindEvents(s);
+                s.on('connect_error', err => reject(err));
+                s.on('connect', () => {
+                    s.emit('join', { room: code, name: gameState.playerName }, ack => {
+                        if (!ack || !ack.ok) { reject(new Error(ack && ack.error ? ack.error : 'no response')); return; }
+                        netMyId = ack.id;
+                        ack.players.forEach(netAddRemote);
+                        resolve(ack);
+                    });
+                });
+            });
+        }
+
+        function netStartOnline(code) {
+            if (ffaActive) return;
+            ffaOnline = true;
+            netDead = false;
+            ffaStart('ffa');
+            netStatus('Connecting...');
+            netConnect(code).then(ack => {
+                netStatus('Live · room ' + ack.room);
+                const label = document.getElementById('ffa-mode-label');
+                if (label) label.textContent = 'LIVE FFA · ROOM ' + ack.room;
+                netSocket.emit('respawn', { x: camera.position.x, z: camera.position.z });
+            }).catch(err => {
+                ffaToast('Could not reach the server: ' + err.message, false);
+                leaveFFA();
+            });
+        }
+
+        function netLeave() {
+            if (!ffaOnline && !netSocket) return;
+            ffaOnline = false;
+            netDead = false;
+            clearTimeout(netRespawnTimer);
+            if (netSocket) { netSocket.disconnect(); netSocket = null; }
+            netRemoteById.forEach(b => { if (ffaArena) ffaArena.remove(b.group); });
+            ffaBots = ffaBots.filter(b => !b.remote);
+            netRemoteById.clear();
+            netMyId = null;
+            netStatus('');
+        }
+
+        function netRespawn() {
+            if (!ffaOnline || !netSocket) return;
+            const sp = ffaFindSpawnPoint(3);
+            camera.position.set(sp.x, PLAYER_HEIGHT, sp.z);
+            ffaHealth = 100;
+            netDead = false;
+            ffaUpdateHUD();
+            netSocket.emit('respawn', { x: sp.x, z: sp.z });
+        }
+
+        function netFire(weapon, origin, dir) {
+            if (!ffaOnline || !netSocket || !netSocket.connected) return;
+            netSocket.emit('fire', { weapon, o: [origin.x, origin.y, origin.z], d: [dir.x, dir.y, dir.z] });
+        }
+
+        function netHit(bot, damage) {
+            if (netSocket && netSocket.connected) netSocket.emit('hit', { victimId: bot.id, damage });
+            bot.group.scale.set(1.08, 0.92, 1.08);
+            setTimeout(() => { if (bot.group && bot.alive) bot.group.scale.set(1, 1, 1); }, 90);
+        }
+
+        function netTick(delta) {
+            if (!ffaOnline || !netSocket || !netSocket.connected) return;
+            netMoveAcc += delta;
+            if (netMoveAcc < 1 / 15) return;
+            netMoveAcc = 0;
+            const d = new THREE.Vector3();
+            camera.getWorldDirection(d);
+            netSocket.volatile.emit('move', { x: camera.position.x, z: camera.position.z, dx: d.x, dz: d.z });
+        }
+
+        // --- MAIN ANIMATION LOOP ---
+
+        const clock = new THREE.Clock();
+
+        function animate() {
+            requestAnimationFrame(animate);
+
+            const delta = clock.getDelta();
+            const time = clock.getElapsedTime();
+
+            calculateCPM();
+            updateCycles(delta, time);
+            tickMarket(delta);
+            updateFFA(delta, time);
+
+            const idleX = Math.sin(time * 1.5) * 0.01;
+            const idleY = Math.cos(time * 2.0) * 0.01;
+
+            if (!ffaActive && eatAnimProgress < 1.0) {
+                eatAnimProgress += delta * 7.5;
+                const phase = Math.sin(eatAnimProgress * Math.PI);
+                const scaleSquish = 1.0 - phase * 0.32;
+                const biteY = -phase * 0.13;
+                const biteZ = phase * 0.09;
+
+                cabbageContainer.scale.set(scaleSquish, scaleSquish, scaleSquish);
+                cabbageContainer.position.set(0.24 + idleX, -0.28 + idleY + biteY, -0.5 + biteZ);
+            } else {
+                cabbageContainer.scale.set(1.0, 1.0, 1.0);
+                cabbageContainer.position.set(0.24 + idleX, -0.28 + idleY, -0.5);
+            }
+
+            updateCrumbs(delta);
+            renderer.render(scene, camera);
+        }
+
+        // Window resize listener
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        updateHUD();
+        updateWeatherHUD();
+
+        window.onload = function() {
+            animate();
+        };
+    </script>
+</body>
+</html>
